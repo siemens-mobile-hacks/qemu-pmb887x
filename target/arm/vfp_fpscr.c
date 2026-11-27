@@ -119,6 +119,13 @@ static void vfp_set_fpcr_masked(CPUARMState *env, uint32_t val, uint32_t mask)
              * allow Stride/Len to be written with the only effect that
              * some insns are required to UNDEF if the guest sets them.
              */
+#ifdef CONFIG_TCG_WASM64
+            /* both are TB-key inputs (VECLEN/VECSTRIDE) */
+            if (env->vfp.vec_len != extract32(val, 16, 3) ||
+                env->vfp.vec_stride != extract32(val, 20, 2)) {
+                cpu_tb_key_gen_bump(env_cpu(env));
+            }
+#endif
             env->vfp.vec_len = extract32(val, 16, 3);
             env->vfp.vec_stride = extract32(val, 20, 2);
         } else if (cpu_isar_feature(aa32_mve, cpu)) {

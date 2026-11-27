@@ -692,6 +692,7 @@ static void gsm_bts_handle_mm(GSMBtsLapdm *lapdm, const uint8_t *message) {
             gsm_bts_encode_lai(&accept[GSM48_L3_HEADER_BYTES]);
             gsm_bts_lapdm_enqueue(lapdm, accept, sizeof(accept));
             gsm_bts_release_channel(lapdm);
+            container_of(lapdm, GSMBts, lapdm)->ms_state |= GSM_BTS_MS_REGISTERED; /* WASM PORT (removable) */
             break;
         }
         case GSM48_MT_MM_CM_SERVICE_REQUEST: {
@@ -704,6 +705,7 @@ static void gsm_bts_handle_mm(GSMBtsLapdm *lapdm, const uint8_t *message) {
             break;
         }
         case GSM48_MT_MM_IMSI_DETACH_INDICATION:
+            container_of(lapdm, GSMBts, lapdm)->ms_state &= ~GSM_BTS_MS_REGISTERED; /* WASM PORT (removable) */
             gsm_bts_release_channel(lapdm);
             break;
     }
@@ -845,7 +847,8 @@ static void gsm_bts_lapdm_transmit(GSMBtsLapdm *lapdm, uint8_t block[GSM_XCCH_BL
     gsm_lapdm_encode_frame(header, LAPDM_CONTROL_UI, false, NULL, 0, false);
 }
 
-static void gsm_bts_sacch_transmit(GSMBts *bts, uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
+/* PMB887X-WEB FEATURE (relay): not static, gsm-relay.c sends on the SACCH of a call */
+void gsm_bts_sacch_transmit(GSMBts *bts, uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
     GSMSacchHeader *header = (GSMSacchHeader *) block;
 
     memset(block, GSM_MACBLOCK_PADDING, GSM_XCCH_BLOCK_BYTES);
@@ -988,9 +991,17 @@ static uint8_t gsm_bts_ts0_transmit_block(
             gsm_bts_encode_bcch(bts, block_start, block);
             return GSMTAP_CHANNEL_BCCH;
         case GSM_BTS_TS0_CCCH:
+            /* PMB887X-WEB FEATURE (relay) */
+            if (bts->relay_core && gsm_relay_ccch(bts, block))
+                return GSMTAP_CHANNEL_CCCH;
             gsm_bts_ccch_dequeue(bts, block);
             return GSMTAP_CHANNEL_CCCH;
         case GSM_BTS_TS0_SDCCH:
+            /* PMB887X-WEB FEATURE (relay) */
+            if (bts->relay_core) {
+                gsm_relay_sdcch_tx(bts, block_start, block);
+                return GSMTAP_CHANNEL_SDCCH4;
+            }
             gsm_bts_lapdm_transmit(&bts->lapdm, block);
             return GSMTAP_CHANNEL_SDCCH4;
         default:
@@ -1039,6 +1050,9 @@ static void gsm_bts_handle_rach(GSMBts *bts, uint8_t ra, uint32_t frame_number) 
 
     memset(&bts->lapdm, 0, sizeof(bts->lapdm));
     bts->lapdm.active = true;
+    /* PMB887X-WEB FEATURE (relay) */
+    if (bts->relay_core)
+        gsm_relay_rach(bts, ra);
     gsm_bts_encode_sdcch_assignment(message, bts->arfcn, ra, frame_number);
     gsm_bts_ccch_enqueue(bts, message);
 }
@@ -1091,6 +1105,11 @@ static void gsm_bts_ts0_uplink_sdcch(
         return;
 
     gsm_bts_gsmtap(bts, true, 0, block_start, GSMTAP_CHANNEL_SDCCH4, block, sizeof(block));
+    /* PMB887X-WEB FEATURE (relay) */
+    if (bts->relay_core) {
+        gsm_relay_sdcch_rx(bts, block);
+        return;
+    }
     gsm_bts_lapdm_handle_frame(&bts->lapdm, block);
 }
 
@@ -1118,6 +1137,9 @@ static bool gsm_bts_downlink_burst(
     if (arfcn != bts->channel)
         return false;
 
+    /* PMB887X-WEB FEATURE (relay) */
+    if (bts->relay_core && gsm_relay_downlink(bts, frame_number, timeslot, burst))
+        return true;
     if (timeslot == 0) {
         gsm_bts_ts0_burst(bts, frame_number, burst);
     } else if (timeslot == GSM_BTS_PDCH_TIMESLOT) {
@@ -1140,6 +1162,9 @@ static void gsm_bts_uplink_burst(
     if (arfcn != bts->channel)
         return;
 
+    /* PMB887X-WEB FEATURE (relay) */
+    if (bts->relay_core && gsm_relay_uplink(bts, frame_number, timeslot, burst))
+        return;
     if (timeslot == 0) {
         gsm_bts_ts0_uplink(bts, frame_number, burst);
     } else if (timeslot == GSM_BTS_PDCH_TIMESLOT) {
@@ -1202,6 +1227,10 @@ static void gsm_bts_complete(UserCreatable *uc, Error **errp) {
     if (bts->gsmtap && !gsm_bts_open_gsmtap(bts, errp))
         return;
 
+    /* PMB887X-WEB FEATURE (relay) */
+    if (bts->relay)
+        gsm_relay_init(bts);
+
     if (bts->netdev) {
         bts->machine_done.notify = gsm_bts_connect_netdev;
         qemu_add_machine_init_done_notifier(&bts->machine_done);
@@ -1245,12 +1274,14 @@ static void gsm_bts_instance_init(Object *obj) {
     bts->gsmtap_fd = -1;
     bts->arfcn = GSM_BTS_DEFAULT_ARFCN;
     object_property_add_uint16_ptr(obj, "arfcn", &bts->arfcn, OBJ_PROP_FLAG_READWRITE);
+    object_property_add_uint8_ptr(obj, "ms-state", &bts->ms_state, OBJ_PROP_FLAG_READ); /* WASM PORT (removable) */
 }
 
 static void gsm_bts_instance_finalize(Object *obj) {
     GSMBts *bts = GSM_BTS(obj);
 
     gsm_bts_gprs_cleanup(bts);
+    gsm_relay_cleanup(bts);   /* PMB887X-WEB FEATURE (relay) */
     if (bts->machine_done.notify)
         qemu_remove_machine_init_done_notifier(&bts->machine_done);
     if (bts->nic)
@@ -1270,6 +1301,7 @@ static void gsm_bts_class_init(ObjectClass *klass, const void *_data) {
     ucc->complete = gsm_bts_complete;
     object_class_property_add_str(klass, "netdev", gsm_bts_get_netdev, gsm_bts_set_netdev);
     object_class_property_add_str(klass, "gsmtap", gsm_bts_get_gsmtap, gsm_bts_set_gsmtap);
+    gsm_relay_class_init(klass);   /* PMB887X-WEB FEATURE (relay): relay=<chardev> */
     object_class_property_add_bool(klass, "pcs1900", gsm_bts_get_pcs1900, gsm_bts_set_pcs1900);
 }
 

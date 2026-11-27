@@ -153,7 +153,8 @@
 #define LLC_SAPIS 16U
 #define LLC_N201_U 500U
 #define LLC_QUEUE_SIZE 64U
-#define LLC_MAX_BYTES (LLC_N201_U + LLC_UI_HEADER_BYTES + LLC_FCS_BYTES)
+#define LLC_N201_U_MAX 1520U
+#define LLC_MAX_BYTES (LLC_N201_U_MAX + LLC_UI_HEADER_BYTES + LLC_FCS_BYTES)
 
 #define GSM48_PD_GMM 0x08U
 #define GSM48_PD_SM 0x0AU
@@ -294,7 +295,7 @@ struct GSMBtsUplinkTbf {
     bool final_acknowledged;
     uint32_t unacknowledged_blocks;
     uint32_t idle_blocks;
-    GSMBtsMessage llc;
+    GSMBtsLlcFrame llc;
 };
 
 struct GSMBtsDownlinkTbf {
@@ -484,6 +485,7 @@ static void gmm_handle(GSMBts *bts, const uint8_t *message, size_t length) {
     switch (message[GSM48_MESSAGE_TYPE_OFFSET]) {
         case GMM_ATTACH_REQUEST:
             bts->gprs->pdp_active = false;
+            bts->ms_state = (bts->ms_state & GSM_BTS_MS_REGISTERED) | GSM_BTS_MS_GPRS_ATTACHED; /* WASM PORT (removable) */
             reply[position++] = GMM_ATTACH_ACCEPT;
             reply[position++] = GMM_ATTACH_RESULT_GPRS;
             reply[position++] = GMM_TIMER_DEACTIVATED;
@@ -496,6 +498,7 @@ static void gmm_handle(GSMBts *bts, const uint8_t *message, size_t length) {
             break;
         case GMM_DETACH_REQUEST:
             bts->gprs->pdp_active = false;
+            bts->ms_state &= GSM_BTS_MS_REGISTERED; /* WASM PORT (removable) */
             if (length <= GMM_DETACH_TYPE_OFFSET)
                 return;
             if (message[GMM_DETACH_TYPE_OFFSET] & GMM_DETACH_POWER_OFF)
@@ -593,6 +596,7 @@ static void sm_handle_activate(GSMBts *bts, const uint8_t *message, size_t lengt
     gprs->nsapi = message[SM_REQUEST_NSAPI_OFFSET] & SNDCP_NSAPI_MASK;
     gprs->data_sapi = message[SM_REQUEST_LLC_SAPI_OFFSET] & LLC_SAPI_MASK;
     gprs->pdp_active = true;
+    bts->ms_state |= GSM_BTS_MS_PDP_ACTIVE; /* WASM PORT (removable) */
     gprs->npdu = 0;
     gprs->sndcp_length = 0;
 
@@ -626,6 +630,7 @@ static void sm_handle(GSMBts *bts, const uint8_t *message, size_t length) {
             uint8_t accept[] = { message[0] ^ GSM48_TI_FLAG, SM_DEACTIVATE_PDP_ACCEPT };
 
             bts->gprs->pdp_active = false;
+            bts->ms_state &= ~GSM_BTS_MS_PDP_ACTIVE; /* WASM PORT (removable) */
             llc_send_ui(bts, LLC_SAPI_GMM, accept, sizeof(accept));
             break;
         }
@@ -859,7 +864,7 @@ static size_t rlc_uplink_decode_chunks(
 }
 
 static void rlc_uplink_deliver_block(GSMBts *bts, const uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
-    GSMBtsMessage *llc = &bts->gprs->ul.llc;
+    GSMBtsLlcFrame *llc = &bts->gprs->ul.llc;
     GSMBtsRlcChunk chunks[RLC_MAX_CHUNKS];
     size_t chunk_count;
     size_t offset = rlc_uplink_decode_chunks(block, chunks, &chunk_count);

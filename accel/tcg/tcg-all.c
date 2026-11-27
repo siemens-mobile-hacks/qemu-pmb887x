@@ -62,6 +62,9 @@ struct TCGState {
 };
 typedef struct TCGState TCGState;
 
+/* vcpu-timers-bank (s) and vcpu-timers-idle-lead (us) */
+static uint32_t tcg_vcpu_timers_bank, tcg_vcpu_timers_idle_lead;
+
 #define TYPE_TCG_ACCEL ACCEL_CLASS_NAME("tcg")
 
 DECLARE_INSTANCE_CHECKER(TCGState, TCG_STATE,
@@ -155,6 +158,8 @@ static int tcg_init_machine(AccelState *as, MachineState *ms)
             return -EINVAL;
         }
         qemu_virtual_timers_on_vcpu = true;
+        cpu_clock_set_bank(tcg_vcpu_timers_bank * NANOSECONDS_PER_SECOND);
+        cpu_clock_set_idle_lead(tcg_vcpu_timers_idle_lead * SCALE_US);
     }
 
     if (tcg_cross_page_links && ms->smp.max_cpus > 1) {
@@ -335,6 +340,19 @@ static void tcg_accel_class_init(ObjectClass *oc, const void *data)
     object_class_property_set_description(oc, "vcpu-timers",
         "Run virtual clock timers on the vCPU thread instead of the main "
         "loop");
+
+    object_class_property_add_uint32_ptr(oc, "vcpu-timers-bank",
+        &tcg_vcpu_timers_bank, OBJ_PROP_FLAG_READWRITE);
+    object_class_property_set_description(oc, "vcpu-timers-bank",
+        "With vcpu-timers: for this many seconds of guest time, catch up "
+        "on time lost to a slow host instead of dropping it");
+
+    object_class_property_add_uint32_ptr(oc, "vcpu-timers-idle-lead",
+        &tcg_vcpu_timers_idle_lead, OBJ_PROP_FLAG_READWRITE);
+    object_class_property_set_description(oc, "vcpu-timers-idle-lead",
+        "With vcpu-timers: while the guest waits for an interrupt, run its "
+        "timers up to this many microseconds ahead of real time and sleep "
+        "once per batch instead of once per timer");
 
     object_class_property_add_bool(oc, "cross-page-links",
                                    tcg_get_cross_page_links,

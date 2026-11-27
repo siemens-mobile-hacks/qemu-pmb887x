@@ -222,6 +222,42 @@ static void test_timer_clock(void) {
 	dsp_bus_destroy(bus);
 }
 
+static void test_bus_horizon(void) {
+	test_host_t host = { .data = { 0x8000, 0 } };
+	dsp_bus_t *bus = test_bus_create(&host);
+
+	dsp_bus_reset(bus);
+	dsp_bus_set_clock_hz(bus, 26000000);
+	dsp_bus_set_ms_clock_hz(bus, 104000000);
+	dsp_bus_write(bus, TEST_TIMER2_BASE + TEAK_TMR2_MAX, 3);
+	dsp_bus_write(bus, TEST_TIMER2_BASE + TEAK_TMR2_CTRL, TEAK_TMR2_CTRL_DT2ACT);
+	for (size_t cycles = 7; cycles < 3 * 96; cycles += 7) {
+		dsp_bus_advance_idle(bus, 7);
+		g_assert_cmphex(dsp_bus_get_irq_flags(bus, 2), ==, 0);
+		if (cycles == 98)
+			g_assert_cmphex(dsp_bus_read(bus, TEST_TIMER2_BASE + TEAK_TMR2_CNT), ==, 1);
+	}
+	dsp_bus_advance_idle(bus, 1);
+	g_assert_cmphex(dsp_bus_get_irq_flags(bus, 2), ==, TEAK_INT_FINT1_TMR2);
+	g_assert_cmphex(dsp_bus_read(bus, TEST_TIMER2_BASE + TEAK_TMR2_CNT), ==, 3);
+
+	dsp_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_NUM0, 441);
+	dsp_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_DEN0, 32500);
+	dsp_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_TXCONF, TEAK_I2S_TXCONF_PERIOD_CLOCKS_32);
+	dsp_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL, TEAK_I2S_CTRL_I2SON);
+	dsp_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_TXINTADDR, 6);
+	dsp_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL, TEAK_I2S_CTRL_I2SON | TEAK_I2S_CTRL_I2STXSTART);
+	for (size_t cycles = 53; cycles < 9434; cycles += 53) {
+		dsp_bus_advance_idle(bus, 53);
+		g_assert_cmphex(dsp_bus_get_irq_flags(bus, 1), ==, 0);
+	}
+	dsp_bus_advance_idle(bus, 53);
+	g_assert_cmphex(dsp_bus_get_irq_flags(bus, 1), ==, TEAK_INT_FINTB0_I2S1TX);
+	g_assert_cmphex(dsp_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 6);
+
+	dsp_bus_destroy(bus);
+}
+
 static void test_control(void) {
 	test_host_t host = { .page = UINT16_MAX, .pc = 0x1234 };
 	dsp_bus_t *bus = test_bus_create(&host);
@@ -671,6 +707,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/peripheral/i2s-clock", test_i2s_clock);
 	g_test_add_func("/pmb887x/dsp/peripheral/i2s-tx-clock", test_i2s_tx_clock);
 	g_test_add_func("/pmb887x/dsp/peripheral/timer-clock", test_timer_clock);
+	g_test_add_func("/pmb887x/dsp/peripheral/bus-horizon", test_bus_horizon);
 	g_test_add_func("/pmb887x/dsp/peripheral/unknown", test_unknown);
 	return g_test_run();
 }

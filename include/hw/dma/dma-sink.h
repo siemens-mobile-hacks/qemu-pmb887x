@@ -43,4 +43,13 @@ bool dma_sink_write_block(DMASinkCache *cache, hwaddr addr,
                           const uint8_t *data, uint32_t width, uint32_t count,
                           bool is_increment);
 
+/*
+ * WASM PORT FAST PATH (removable): dma_sink_write_block() for a caller that
+ * keeps its own bus translation and already holds the target region.
+ */
+bool dma_sink_write_block_mr(DMASinkCache *cache, MemoryRegion *mr,
+                             hwaddr offset, const uint8_t *data,
+                             uint32_t width, uint32_t count,
+                             bool is_increment);
+
 #endif

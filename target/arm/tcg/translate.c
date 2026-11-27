@@ -33,6 +33,7 @@
 #include "system/memory.h"
 #include "accel/tcg/probe.h"
 #include "arm9e-cycles.h"
+#include "w64-fill.h"
 #include "helper.h"
 #include "helper-mve.h"
 
@@ -611,16 +612,25 @@ static inline void gen_arm_shift_im(TCGv_i32 var, int shiftop,
     }
 };
 
+#ifdef CONFIG_TCG_WASM64
+/* translate-w64.c.inc */
+static void gen_shift_cc_w64(TCGv_i32 var, int shiftop, TCGv_i32 shift);
+#endif
+
 static inline void gen_arm_shift_reg(TCGv_i32 var, int shiftop,
                                      TCGv_i32 shift, int flags)
 {
     if (flags) {
+#ifdef CONFIG_TCG_WASM64
+        gen_shift_cc_w64(var, shiftop, shift);
+#else
         switch (shiftop) {
         case 0: gen_helper_shl_cc(var, tcg_env, var, shift); break;
         case 1: gen_helper_shr_cc(var, tcg_env, var, shift); break;
         case 2: gen_helper_sar_cc(var, tcg_env, var, shift); break;
         case 3: gen_helper_ror_cc(var, tcg_env, var, shift); break;
         }
+#endif
     } else {
         switch (shiftop) {
         case 0:
@@ -758,6 +768,9 @@ static inline void gen_bx(DisasContext *s, TCGv_i32 var)
     tcg_gen_andi_i32(var, var, 1);
     store_cpu_field(var, thumb);
     s->pc_save = -1;
+#ifdef CONFIG_TCG_WASM64
+    s->w64_thumb = -1;
+#endif
 }
 
 /*
@@ -1053,6 +1066,22 @@ static void gen_exception_el_v(int excp, uint32_t syndrome, TCGv_i32 tcg_el)
                                           tcg_constant_i32(syndrome), tcg_el);
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * An SVC on a core without EL2/EL3 always targets EL1, so its full state
+ * is known at translate time and it can be taken inside the TB (see
+ * DISAS_SWI in arm_tr_tb_stop) rather than through cpu_loop_exit(), which
+ * on emscripten unwinds via a JS exception.
+ */
+static bool arm_excp_exit_ok(DisasContext *s)
+{
+    return !s->aarch64
+        && !arm_dc_feature(s, ARM_FEATURE_EL2)
+        && !arm_dc_feature(s, ARM_FEATURE_EL3)
+        && !arm_dc_feature(s, ARM_FEATURE_M);
+}
+#endif
+
 static void gen_exception_el(int excp, uint32_t syndrome, uint32_t target_el)
 {
     gen_exception_el_v(excp, syndrome, tcg_constant_i32(target_el));
@@ -1310,8 +1339,18 @@ void write_neon_element64(TCGv_i64 src, int reg, int ele, MemOp memop)
     }
 }
 
-static void gen_goto_ptr(void)
+#ifdef CONFIG_TCG_WASM64
+/* translate-w64.c.inc */
+static bool w64_goto_ptr(DisasContext *s, uint32_t condexec);
+#endif
+
+static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
 {
+#ifdef CONFIG_TCG_WASM64
+    if (w64_goto_ptr(s, condexec)) {
+        return;
+    }
+#endif
     tcg_gen_lookup_and_goto_ptr();
 }
 
@@ -1319,17 +1358,20 @@ static void gen_goto_ptr(void)
  * The TB flags are constant within a TB, so an indirect jump that does not
  * change them reaches a TB whose flags differ only in the Thumb bit.
  */
-static void gen_linked_goto_ptr(DisasContext *s)
+static void gen_linked_goto_ptr(DisasContext *s, uint32_t condexec)
 {
     TBLookupLink *link = NULL;
 
+#ifndef CONFIG_TCG_WASM64
+    /* on wasm, the per-TB slot of gen_goto_ptr does the link's job */
     bool keeps_tb_flags = !s->jump_changes_tb_flags && !s->condexec_mask;
 
     if (keeps_tb_flags && !arm_dc_feature(s, ARM_FEATURE_M)) {
         link = translator_lookup_link_new(&s->base);
     }
+#endif
     if (link == NULL) {
-        gen_goto_ptr();
+        gen_goto_ptr(s, condexec);
         return;
     }
 
@@ -1357,6 +1399,9 @@ static void gen_linked_goto_ptr(DisasContext *s)
  */
 static void gen_goto_tb(DisasContext *s, unsigned tb_slot_idx, int64_t diff)
 {
+#ifdef CONFIG_TCG_WASM64
+    s->w64_slots |= 1 << tb_slot_idx;
+#endif
     if (translator_use_goto_tb(&s->base, s->pc_curr + diff)) {
         /*
          * For pcrel, the pc must always be up-to-date on entry to
@@ -1376,10 +1421,14 @@ static void gen_goto_tb(DisasContext *s, unsigned tb_slot_idx, int64_t diff)
         tcg_gen_exit_tb(s->base.tb, tb_slot_idx);
     } else {
         gen_update_pc(s, diff);
-        gen_goto_ptr();
+        gen_goto_ptr(s, 0);
     }
     s->base.is_jmp = DISAS_NORETURN;
 }
+
+#ifdef CONFIG_TCG_WASM64
+#include "translate-w64.c.inc"
+#endif
 
 /* Jump, specifying which TB number to use if we gen_goto_tb() */
 static void gen_jmp_tb(DisasContext *s, int64_t diff, int tbno)
@@ -1403,6 +1452,17 @@ static void gen_jmp_tb(DisasContext *s, int64_t diff, int tbno)
          *    gen_jmp();
          * on the second call to gen_jmp().
          */
+#ifdef CONFIG_TCG_WASM64
+        if (w64_back_edge(s, diff)) {
+            return;
+        }
+        if (w64_absorb(s, diff)) {
+            return;
+        }
+        if (tbno == 0 && w64_defer_taken(s, diff)) {
+            return;
+        }
+#endif
         gen_goto_tb(s, tbno, diff);
         break;
     case DISAS_UPDATE_NOCHAIN:
@@ -1413,7 +1473,7 @@ static void gen_jmp_tb(DisasContext *s, int64_t diff, int tbno)
          * and don't chain to another TB.
          */
         gen_update_pc(s, diff);
-        gen_goto_ptr();
+        gen_goto_ptr(s, 0);
         s->base.is_jmp = DISAS_NORETURN;
         break;
     default:
@@ -1507,6 +1567,10 @@ static void gen_lookup_tb_after_cpsr_write(DisasContext *s)
 static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
 {
     TCGv_i32 tmp;
+
+#ifdef CONFIG_TCG_WASM64
+    return w64_gen_set_psr(s, mask, spsr, t0);
+#endif
     if (spsr) {
         /* ??? This is also undefined in system mode.  */
         if (IS_USER(s))
@@ -1762,6 +1826,9 @@ static void gen_rfe(DisasContext *s, TCGv_i32 pc, TCGv_i32 cpsr)
     gen_helper_cpsr_write_eret(tcg_env, cpsr);
     /* Must exit loop to check un-masked IRQs */
     s->base.is_jmp = DISAS_EXIT;
+#ifdef CONFIG_TCG_WASM64
+    w64_eret_end_tb(s);
+#endif
 }
 
 /* Generate an old-style exception return. Marks pc as dead. */
@@ -2663,13 +2730,31 @@ static bool op_s_rxi_rot(DisasContext *s, arg_s_rri_rot *a,
     static bool trans_##NAME##_rxi(DisasContext *s, arg_s_rri_rot *a)   \
     { StoreRegKind k = (K); return op_s_rxi_rot(s, a, OP, L, k); }
 
+/*
+ * Canonical compare/test encodings have Rd == 0, but classic (pre-V7)
+ * cores only gate the register writeback on the opcode decode: A32
+ * TST/TEQ/CMP/CMN with any Rd 1..14 executes as the flag-only op on
+ * silicon (patched firmwares branch into such literal-pool words).
+ * Keep UNDEF for V7+ (deliberate strictness) and Rd == 15 (SPSR-restore
+ * form).  The trans_CMP/TST functions are shared by the A32/T16/T32
+ * decoders and Thumb delivers live register fields (T16 hi-reg CMP pc,
+ * rN), so only ARM state is tolerant.
+ */
+#define CMP_CHECK_RD(s, a) do {                                         \
+    if (!s->thumb && (a)->rd != 0 &&                                    \
+        ((a)->rd == 15 || arm_dc_feature((s), ARM_FEATURE_V7))) {       \
+        unallocated_encoding(s);                                        \
+        return true;                                                    \
+    }                                                                   \
+} while (0)
+
 #define DO_CMP2(NAME, OP, L)                                            \
     static bool trans_##NAME##_xrri(DisasContext *s, arg_s_rrr_shi *a)  \
-    { return op_s_rrr_shi(s, a, OP, L, STREG_NONE); }                   \
+    { CMP_CHECK_RD(s, a); return op_s_rrr_shi(s, a, OP, L, STREG_NONE); } \
     static bool trans_##NAME##_xrrr(DisasContext *s, arg_s_rrr_shr *a)  \
-    { return op_s_rrr_shr(s, a, OP, L, STREG_NONE); }                   \
+    { CMP_CHECK_RD(s, a); return op_s_rrr_shr(s, a, OP, L, STREG_NONE); } \
     static bool trans_##NAME##_xri(DisasContext *s, arg_s_rri_rot *a)   \
-    { return op_s_rri_rot(s, a, OP, L, STREG_NONE); }
+    { CMP_CHECK_RD(s, a); return op_s_rri_rot(s, a, OP, L, STREG_NONE); }
 
 DO_ANY3(AND, tcg_gen_and_i32, a->s, STREG_NORMAL)
 DO_ANY3(EOR, tcg_gen_xor_i32, a->s, STREG_NORMAL)
@@ -3465,6 +3550,7 @@ static bool trans_MSR_bank(DisasContext *s, arg_MSR_bank *a)
     return true;
 }
 
+
 static bool trans_MRS_reg(DisasContext *s, arg_MRS_reg *a)
 {
     TCGv_i32 tmp;
@@ -3479,8 +3565,12 @@ static bool trans_MRS_reg(DisasContext *s, arg_MRS_reg *a)
         }
         tmp = load_cpu_field(spsr);
     } else {
+#ifdef CONFIG_TCG_WASM64
+        tmp = w64_gen_cpsr_read();
+#else
         tmp = tcg_temp_new_i32();
         gen_helper_cpsr_read(tmp, tcg_env);
+#endif
     }
     store_reg(s, a->rd, tmp);
     return true;
@@ -3535,6 +3625,11 @@ static bool trans_BX(DisasContext *s, arg_BX *a)
     if (!ENABLE_ARCH_4T) {
         return false;
     }
+#ifdef CONFIG_TCG_WASM64
+    if (w64_inline_return(s, a->rm)) {
+        return true;
+    }
+#endif
     gen_bx_excret(s, load_reg(s, a->rm));
     return true;
 }
@@ -5175,11 +5270,18 @@ static void op_addr_block_post(DisasContext *s, arg_ldst_block *a,
     }
 }
 
+#ifdef CONFIG_TCG_WASM64
+#include "translate-w64-block.c.inc"
+#endif
+
 static bool op_stm(DisasContext *s, arg_ldst_block *a)
 {
     int i, j, n, list, mem_idx;
     bool user = a->u;
     TCGv_i32 addr, tmp;
+#ifdef CONFIG_TCG_WASM64
+    TCGLabel *w64_done;
+#endif
 
     if (user) {
         /* STM (user) */
@@ -5208,6 +5310,9 @@ static bool op_stm(DisasContext *s, arg_ldst_block *a)
 
     addr = op_addr_block_pre(s, a, n);
     mem_idx = get_mem_index(s);
+#ifdef CONFIG_TCG_WASM64
+    w64_done = w64_stm_fast(s, a, addr, n, mem_idx);
+#endif
 
     for (i = j = 0; i < 16; i++) {
         if (!(list & (1 << i))) {
@@ -5227,6 +5332,11 @@ static bool op_stm(DisasContext *s, arg_ldst_block *a)
             tcg_gen_addi_i32(addr, addr, 4);
         }
     }
+#ifdef CONFIG_TCG_WASM64
+    if (w64_done) {
+        gen_set_label(w64_done);
+    }
+#endif
 
     op_addr_block_post(s, a, addr, n);
     clear_eci_state(s);
@@ -5255,6 +5365,10 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a)
     bool user = a->u;
     bool exc_return = false;
     TCGv_i32 addr, tmp, loaded_var;
+#ifdef CONFIG_TCG_WASM64
+    TCGv_i32 w64_base = NULL, w64_pc = NULL;
+    TCGLabel *w64_done;
+#endif
 
     if (user) {
         /* LDM (user), LDM (exception return) */
@@ -5295,6 +5409,10 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a)
     mem_idx = get_mem_index(s);
     loaded_base = false;
     loaded_var = NULL;
+#ifdef CONFIG_TCG_WASM64
+    w64_done = w64_ldm_fast(s, a, addr, n, mem_idx, exc_return,
+                            &w64_base, &w64_pc);
+#endif
 
     for (i = j = 0; i < 16; i++) {
         if (!(list & (1 << i))) {
@@ -5302,6 +5420,11 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a)
         }
 
         tmp = tcg_temp_new_i32();
+#ifdef CONFIG_TCG_WASM64
+        if (w64_done && (i == a->rn || i == 15)) {
+            tmp = i == 15 ? w64_pc : w64_base;
+        }
+#endif
         gen_aa32_ld_i32(s, tmp, addr, mem_idx, MO_UL | MO_ALIGN);
         if (user) {
             gen_helper_set_user_reg(tcg_env, tcg_constant_i32(i), tmp);
@@ -5310,6 +5433,10 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a)
             loaded_base = true;
         } else if (i == 15 && exc_return) {
             store_pc_exc_ret(s, tmp);
+#ifdef CONFIG_TCG_WASM64
+        } else if (i == 15 && w64_done) {
+            /* after the arms meet */
+#endif
         } else {
             store_reg_from_load(s, i, tmp);
         }
@@ -5319,6 +5446,14 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a)
             tcg_gen_addi_i32(addr, addr, 4);
         }
     }
+#ifdef CONFIG_TCG_WASM64
+    if (w64_done) {
+        gen_set_label(w64_done);
+        if (list & (1 << 15)) {
+            store_reg_from_load(s, 15, w64_pc);
+        }
+    }
+#endif
 
     op_addr_block_post(s, a, addr, n);
 
@@ -5334,6 +5469,9 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a)
         gen_helper_cpsr_write_eret(tcg_env, tmp);
         /* Must exit loop to check un-masked IRQs */
         s->base.is_jmp = DISAS_EXIT;
+#ifdef CONFIG_TCG_WASM64
+        w64_eret_end_tb(s);
+#endif
     }
     clear_eci_state(s);
     return true;
@@ -5430,7 +5568,7 @@ static bool trans_B_cond_thumb(DisasContext *s, arg_ci *a)
     }
     arm_skip_unless(s, a->cond);
     if (s->arm9e_cycles) {
-        translator_count_cycles(&s->base, 2, true);
+        translator_count_cycles(&s->base, ARM9E_THUMB_BCOND_TAKEN_CYCLES, true);
     }
     gen_jmp(s, jmp_diff(s, a->imm));
     return true;
@@ -5439,6 +5577,11 @@ static bool trans_B_cond_thumb(DisasContext *s, arg_ci *a)
 static bool trans_BL(DisasContext *s, arg_i *a)
 {
     gen_pc_plus_diff(s, cpu_R[14], curr_insn_len(s) | s->thumb);
+#ifdef CONFIG_TCG_WASM64
+    if (w64_inline_call(s, jmp_diff(s, a->imm))) {
+        return true;
+    }
+#endif
     gen_jmp(s, jmp_diff(s, a->imm));
     return true;
 }
@@ -5459,6 +5602,9 @@ static bool trans_BLX_i(DisasContext *s, arg_BLX_i *a)
     }
     gen_pc_plus_diff(s, cpu_R[14], curr_insn_len(s) | s->thumb);
     store_cpu_field_constant(!s->thumb, thumb);
+#ifdef CONFIG_TCG_WASM64
+    s->w64_thumb = !s->thumb;
+#endif
     /* This jump is computed from an aligned PC: subtract off the low bits. */
     gen_jmp(s, jmp_diff(s, a->imm - (s->pc_curr & 3)));
     return true;
@@ -6405,6 +6551,26 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     dc->pc_save = dc->base.pc_first;
     dc->aarch64 = false;
     dc->thumb = EX_TBFLAG_AM32(tb_flags, THUMB);
+#ifdef CONFIG_TCG_WASM64
+    dc->w64_thumb = dc->thumb;
+    dc->w64_dynkey = false;
+    dc->w64_lc_sites = 0;
+    dc->w64_ft_n = 0;
+    dc->w64_slots = 0;
+    dc->w64_loop_insns = 0;
+    /* WASM PORT FAST PATH (removable): w64-fill.c */
+    dc->w64_fill_desc = 0;
+    dc->w64_rect_ft = -1;
+    dc->w64_join_n = 0;
+    dc->w64_inl_depth = 0;
+    dc->w64_inl_page = 0;
+    dc->w64_inl_tracked = false;
+    dc->w64_inl_miss_n = 0;
+    dc->w64_abs_rec = -1;
+    dc->w64_psr_miss_n = 0;
+    dc->w64_env = env;
+    w64_inl_pending_n = 0;
+#endif
     dc->be_data = EX_TBFLAG_ANY(tb_flags, BE_DATA) ? MO_BE : MO_LE;
     condexec = EX_TBFLAG_AM32(tb_flags, CONDEXEC);
     /*
@@ -6494,6 +6660,9 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
         dc->base.max_insns = 1;
     }
 
+#ifdef CONFIG_TCG_WASM64
+    dc->w64_max_insns0 = dc->base.max_insns;
+#endif
     /* ARM is a fixed-length ISA.  Bound the number of insns to execute
        to those left on the page.  */
     if (!dc->thumb) {
@@ -6541,6 +6710,16 @@ static void arm_tr_tb_start(DisasContextBase *dcbase, CPUState *cpu)
     if (dc->condexec_mask || dc->condexec_cond) {
         store_cpu_field_constant(0, condexec_bits);
     }
+
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * A guest loop whose body is one TB leaves that TB by tail-calling
+     * itself.  Name the top so a back-edge can branch here instead; TCG
+     * drops the label again if nothing does (reachable_code_pass).
+     */
+    dc->w64_loop = gen_disas_label(dc);
+    set_disas_label(dc, dc->w64_loop);
+#endif
 }
 
 static void arm_tr_insn_start(DisasContextBase *dcbase, CPUState *cpu)
@@ -6554,6 +6733,11 @@ static void arm_tr_insn_start(DisasContextBase *dcbase, CPUState *cpu)
     uint32_t condexec_bits;
     uint32_t pc_arg = dc->base.pc_next;
 
+#ifdef CONFIG_TCG_WASM64
+    if (dc->w64_ft_n) {
+        w64_try_join(dc, dc->base.pc_next);
+    }
+#endif
     if (tb_cflags(dcbase->tb) & CF_PCREL) {
         pc_arg &= ~TARGET_PAGE_MASK;
     }
@@ -6613,6 +6797,22 @@ static void arm_post_translate_insn(DisasContext *dc)
         gen_set_label(dc->condlabel.label);
         dc->condjmp = 0;
     }
+#ifdef CONFIG_TCG_WASM64
+    if (w64_inl_stream(dc)) {
+        if (!dc->w64_inl_tracked) {
+            w64_inl_track(dc, dc->base.pc_next - 1);
+        }
+        /*
+         * An inlined callee running off its page ends the TB; the Thumb
+         * translator makes the same check itself against page_start.
+         */
+        if (!dc->thumb && dc->base.is_jmp == DISAS_NEXT &&
+            dc->base.pc_next - dc->page_start >= TARGET_PAGE_SIZE) {
+            dc->base.is_jmp = DISAS_TOO_MANY;
+        }
+    }
+    dc->w64_inl_tracked = false;
+#endif
 }
 
 /* Load an instruction and return it in the standard little-endian order */
@@ -6655,6 +6855,11 @@ static void arm_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     }
 
     dc->pc_curr = pc;
+    if (unlikely(pc == qatomic_read(&arm_pc_hook_addr))) {
+        /* PMB887X-WEB FEATURE (card assist, cpu.h): may redirect the guest */
+        gen_update_pc(dc, 0);
+        gen_helper_pmb887x_pc_hook(tcg_env);
+    }
     insn = arm_ldl_code(env, &dc->base, pc, dc->sctlr_b);
     dc->insn = insn;
     dc->base.pc_next = pc + 4;
@@ -6736,6 +6941,11 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     }
 
     dc->pc_curr = pc;
+    if (unlikely(pc == qatomic_read(&arm_pc_hook_addr))) {
+        /* PMB887X-WEB FEATURE (card assist, cpu.h): may redirect the guest */
+        gen_update_pc(dc, 0);
+        gen_helper_pmb887x_pc_hook(tcg_env);
+    }
     insn = arm_lduw_code(env, &dc->base, pc, dc->sctlr_b);
     is_16bit = thumb_insn_is_16bit(dc, dc->base.pc_next, insn);
     pc += 2;
@@ -6746,6 +6956,12 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     }
     dc->base.pc_next = pc;
     dc->insn = insn;
+#ifdef CONFIG_TCG_WASM64
+    /* WASM PORT FAST PATH (removable) */
+    if (dc->base.num_insns <= ARRAY_SIZE(dc->w64_fill_words)) {
+        dc->w64_fill_words[dc->base.num_insns - 1] = is_16bit ? insn : 0xffff;
+    }
+#endif
 
     if (dc->arm9e_cycles) {
         uint32_t stall = arm9e_thumb_stall(&dc->arm9e_late, insn);
@@ -7082,6 +7298,9 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
 {
     DisasContext *dc = container_of(dcbase, DisasContext, base);
 
+#ifdef CONFIG_TCG_WASM64
+    w64_inl_close_records(dc);
+#endif
     if (dc->arm9e_cycles) {
         const TCGMemoryTiming *timing =
             tcg_memory_timing_get(tb_cflags(dc->base.tb));
@@ -7143,6 +7362,10 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             - Hardware watchpoints.
            Hardware breakpoints have already been handled and skip this code.
          */
+        /* memory holds what gen_set_condexec stored above, else 0 */
+        uint32_t condexec = dc->condexec_mask ?
+                            (dc->condexec_cond << 4) | (dc->condexec_mask >> 1) : 0;
+
         switch (dc->base.is_jmp) {
         case DISAS_NEXT:
         case DISAS_TOO_MANY:
@@ -7150,10 +7373,10 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             break;
         case DISAS_UPDATE_NOCHAIN:
             gen_update_pc(dc, curr_insn_len(dc));
-            gen_goto_ptr();
+            gen_goto_ptr(dc, condexec);
             break;
         case DISAS_JUMP:
-            gen_linked_goto_ptr(dc);
+            gen_linked_goto_ptr(dc, condexec);
             break;
         case DISAS_UPDATE_EXIT:
             gen_update_pc(dc, curr_insn_len(dc));
@@ -7185,6 +7408,22 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             gen_helper_yield(tcg_env);
             break;
         case DISAS_SWI:
+#ifdef CONFIG_TCG_WASM64
+            if (arm_excp_exit_ok(dc)) {
+                /*
+                 * Take the exception here and continue into the vector
+                 * through goto_ptr: no exit to cpu_exec_loop() at all.
+                 * The helper writes mode, hflags, thumb and condexec, so
+                 * the lookup-cache key is fully dynamic, as after rfe.
+                 */
+                gen_helper_svc_inline(
+                    tcg_env,
+                    tcg_constant_i32(syn_aa32_svc(dc->svc_imm, dc->thumb)));
+                dc->w64_dynkey = true;
+                gen_goto_ptr(dc, 0);
+                break;
+            }
+#endif
             gen_exception(EXCP_SWI, syn_aa32_svc(dc->svc_imm, dc->thumb));
             break;
         case DISAS_HVC:
@@ -7199,6 +7438,9 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
     if (dc->condjmp) {
         /* "Condition failed" instruction codepath for the branch/trap insn */
         set_disas_label(dc, dc->condlabel);
+#ifdef CONFIG_TCG_WASM64
+        w64_key_static(dc);
+#endif
         gen_set_condexec(dc);
         if (unlikely(dc->ss_active)) {
             gen_update_pc(dc, curr_insn_len(dc));
@@ -7208,7 +7450,26 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
         }
     }
 
+#ifdef CONFIG_TCG_WASM64
+    w64_rect_match(dc);     /* WASM PORT FAST PATH (removable) */
+    w64_emit_deferred_taken(dc);
+    w64_emit_inline_misses(dc);
+    w64_emit_psr_misses(dc);
+#endif
+
     emit_delayed_exceptions(dc);
+
+#ifdef CONFIG_TCG_WASM64
+    /* WASM PORT FAST PATH (removable): what gen_tb_end patches in */
+    if (dc->w64_rect_ft == -2 &&
+        dc->base.num_insns + dc->base.num_extra_cycles <= UINT16_MAX) {
+        dc->w64_rect.cycles = (tb_cflags(dc->base.tb) & CF_COUNT_CYCLES) ?
+                              dc->base.num_insns + dc->base.num_extra_cycles : 0;
+        dc->base.tb->w64_rect = dc->w64_rect;
+    } else {
+        dc->base.tb->w64_rect.kind = 0;
+    }
+#endif
 }
 
 static const TranslatorOps arm_translator_ops = {

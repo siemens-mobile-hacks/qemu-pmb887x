@@ -42,6 +42,8 @@ struct AudioLineSinkClass {
 struct AudioLineSinkPort {
     QDevBusPort parent;
     AudioLineSink *sink;
+    /* WASM PORT FAST PATH (removable): the sink's class, for audio_line_write() */
+    AudioLineSinkClass *klass;
 };
 
 AudioLineBus *audio_line_bus_init(DeviceState *parent, const char *name);

@@ -97,6 +97,18 @@ void timer2_advance(dsp_device_t *device, size_t cycles) {
 		dsp_int_set_flags(state->interrupt, TIMER_INTERRUPT_GROUP, TEAK_INT_FINT1_TMR2);
 }
 
+/* WASM PORT FAST PATH (removable): for dsp_bus_get_horizon() */
+size_t timer2_get_cycles_until_interrupt(const dsp_device_t *device) {
+	const timer2_state_t *state = device->state;
+	size_t ticks = (uint16_t) (state->maximum - state->counter);
+
+	if (ticks == 0) {
+		if (state->maximum == 0)
+			return SIZE_MAX;
+		ticks = (size_t) state->maximum + 1;
+	}
+	return ticks * TIMER2_DIVIDER - state->prescaler;
+}
 
 static const dsp_device_ops_t timer2_ops = {
 	.destroy = timer2_destroy,

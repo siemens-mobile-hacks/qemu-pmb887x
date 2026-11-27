@@ -24,8 +24,20 @@
 /* Minimalized TLB entry for use by TCG fast path. */
 typedef union CPUTLBEntry {
     struct {
+#ifdef CONFIG_TCG_WASM64
+        /*
+         * WASM PORT FAST PATH (removable): the comparator of a 32-bit
+         * guest next to a copy of the addend's low half, so that the
+         * generated probe takes both in one 64-bit load (V8 on Android
+         * bounds-checks every load).  An invalid comparator is
+         * 0xffffffff here, which no key matches either.
+         */
+        uint32_t addend_read, addr_read;
+        uint32_t addend_write, addr_write;
+#else
         uintptr_t addr_read;
         uintptr_t addr_write;
+#endif
         uintptr_t addr_code;
         /*
          * Addend to virtual address to get host address.  IO accesses

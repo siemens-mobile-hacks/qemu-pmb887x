@@ -14,6 +14,8 @@
 #define LCD_CMD_MAX_PARAMS 256
 #define LCD_RAM_QUEUE_SIZE (64 * 1024)
 #define LCD_RAM_QUEUE_WAKE_BYTES (4 * 1024)
+#define LCD_RAM_WRITER_POLL_US 1000
+#define LCD_RAM_WRITER_IDLE_POLLS 50
 
 static uint32_t lcd_read_from_fifo(LCDState *lcd, uint32_t width);
 static void lcd_clear_fifo(LCDState *lcd);
@@ -235,37 +237,58 @@ static void lcd_write_ram_byte(LCDState *lcd, uint8_t value) {
     }
 }
 
+/* Called with ram_queue_lock held. */
+static void lcd_write_queued_ram_bytes(LCDState *lcd) {
+    uint32_t head = qatomic_load_acquire(&lcd->ram_queue_head);
+    uint32_t tail = lcd->ram_queue_tail;
+
+    for (; tail != head; tail++)
+        lcd_write_ram_byte(lcd, lcd->ram_queue[tail % LCD_RAM_QUEUE_SIZE]);
+    qatomic_store_release(&lcd->ram_queue_tail, tail);
+}
+
+/*
+ * WASM PORT FAST PATH (removable): waking the writer cost the producer ~2 %
+ * of the vCPU on the stopwatch (Atomics.notify, one per 4 KB), about as much
+ * as writing the bytes itself.  So the writer only sleeps on the event when
+ * the queue stays empty for LCD_RAM_WRITER_IDLE_POLLS polls; while it polls,
+ * the event is not waited on and setting it wakes nobody.
+ */
 static void *lcd_ram_writer_run(void *opaque) {
     LCDState *lcd = opaque;
-    uint32_t tail = 0;
+    unsigned idle_polls = LCD_RAM_WRITER_IDLE_POLLS;
 
     while (true) {
-        qemu_event_wait(&lcd->ram_queue_ready);
-        qemu_event_reset(&lcd->ram_queue_ready);
-        uint32_t head = qatomic_load_acquire(&lcd->ram_queue_head);
-        if (tail == head)
+        if (idle_polls >= LCD_RAM_WRITER_IDLE_POLLS) {
+            qemu_event_wait(&lcd->ram_queue_ready);
+            qemu_event_reset(&lcd->ram_queue_ready);
+            idle_polls = 0;
+        } else {
+            g_usleep(LCD_RAM_WRITER_POLL_US);
+        }
+        if (qatomic_load_acquire(&lcd->ram_queue_head) == qatomic_read(&lcd->ram_queue_tail)) {
+            idle_polls++;
             continue;
-
-        for (; tail != head; tail++)
-            lcd_write_ram_byte(lcd, lcd->ram_queue[tail % LCD_RAM_QUEUE_SIZE]);
-
+        }
+        idle_polls = 0;
         qemu_mutex_lock(&lcd->ram_queue_lock);
-        qatomic_store_release(&lcd->ram_queue_tail, tail);
-        qemu_cond_broadcast(&lcd->ram_queue_drained);
+        lcd_write_queued_ram_bytes(lcd);
         qemu_mutex_unlock(&lcd->ram_queue_lock);
     }
     return NULL;
 }
 
+/*
+ * WASM PORT FAST PATH (removable): writes what the writer has not taken yet
+ * here instead of waking it and waiting: a drain at a CD edge usually finds
+ * it asleep below the wake threshold.
+ */
 static void lcd_drain_ram_queue(LCDState *lcd) {
-    uint32_t head = lcd->ram_queue_head;
-    if (qatomic_load_acquire(&lcd->ram_queue_tail) == head)
+    if (qatomic_load_acquire(&lcd->ram_queue_tail) == lcd->ram_queue_head)
         return;
 
-    qemu_event_set(&lcd->ram_queue_ready);
     qemu_mutex_lock(&lcd->ram_queue_lock);
-    while (qatomic_read(&lcd->ram_queue_tail) != head)
-        qemu_cond_wait(&lcd->ram_queue_drained, &lcd->ram_queue_lock);
+    lcd_write_queued_ram_bytes(lcd);
     qemu_mutex_unlock(&lcd->ram_queue_lock);
 }
 
@@ -280,6 +303,21 @@ static void lcd_queue_ram_bytes(LCDState *lcd, const uint32_t *values, size_t co
 
     for (size_t i = 0; i < count; i++)
         lcd->ram_queue[(head + i) % LCD_RAM_QUEUE_SIZE] = values[i];
+    qatomic_store_release(&lcd->ram_queue_head, head + count);
+    if ((head + count) / LCD_RAM_QUEUE_WAKE_BYTES != head / LCD_RAM_QUEUE_WAKE_BYTES)
+        qemu_event_set(&lcd->ram_queue_ready);
+}
+
+/* WASM PORT FAST PATH (removable): a byte run from ssi_transfer_bytes() */
+static void lcd_queue_ram_byte_run(LCDState *lcd, const uint8_t *bytes, size_t count) {
+    uint32_t head = lcd->ram_queue_head;
+    if (head - qatomic_load_acquire(&lcd->ram_queue_tail) > LCD_RAM_QUEUE_SIZE - count)
+        lcd_drain_ram_queue(lcd);
+
+    uint32_t pos = head % LCD_RAM_QUEUE_SIZE;
+    size_t first = MIN(count, LCD_RAM_QUEUE_SIZE - pos);
+    memcpy(lcd->ram_queue + pos, bytes, first);
+    memcpy(lcd->ram_queue, bytes + first, count - first);
     qatomic_store_release(&lcd->ram_queue_head, head + count);
     if ((head + count) / LCD_RAM_QUEUE_WAKE_BYTES != head / LCD_RAM_QUEUE_WAKE_BYTES)
         qemu_event_set(&lcd->ram_queue_ready);
@@ -569,6 +607,18 @@ static void lcd_transfer_block(SSIPeripheral *dev, const uint32_t *tx, uint32_t 
     }
 }
 
+/* WASM PORT FAST PATH (removable) */
+static void lcd_transfer_bytes(SSIPeripheral *dev, const uint8_t *tx, size_t count) {
+    LCDState *lcd = LCD(dev);
+    if (lcd_is_writing_ram(lcd) && count <= LCD_RAM_QUEUE_SIZE) {
+        lcd_queue_ram_byte_run(lcd, tx, count);
+        return;
+    }
+
+    for (size_t i = 0; i < count; i++)
+        lcd_transfer(dev, tx[i]);
+}
+
 static const GraphicHwOps lcd_gfx_ops = {
     .invalidate = lcd_invalidate_display,
     .gfx_update = lcd_update_display
@@ -674,7 +724,6 @@ static void lcd_realize(SSIPeripheral *d, Error **errp) {
 
     lcd->ram_queue = g_new(uint8_t, LCD_RAM_QUEUE_SIZE);
     qemu_mutex_init(&lcd->ram_queue_lock);
-    qemu_cond_init(&lcd->ram_queue_drained);
     qemu_event_init(&lcd->ram_queue_ready, false);
     qemu_thread_create(&lcd->ram_writer, "lcd-ram-writer", lcd_ram_writer_run, lcd, QEMU_THREAD_DETACHED);
 
@@ -717,6 +766,7 @@ static void lcd_class_init(ObjectClass *klass, const void *data) {
     k->realize = lcd_realize;
     k->transfer = lcd_transfer;
     k->transfer_block = lcd_transfer_block;
+    k->transfer_bytes = lcd_transfer_bytes;
     k->cs_polarity = SSI_CS_LOW;
 }
 

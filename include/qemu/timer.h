@@ -71,6 +71,13 @@ typedef enum {
  */
 
 #define QEMU_TIMER_ATTR_EXTERNAL ((int)BIT(0))
+/*
+ * QEMU_TIMER_ATTR_LAZY (vcpu-timers): the timer neither caps the virtual
+ * clock nor ends the vCPU budget; it runs, late, with the timers due at the
+ * next budget end.  Only for a device that catches its lazy timer up itself
+ * wherever the guest could see the difference.
+ */
+#define QEMU_TIMER_ATTR_LAZY     ((int)BIT(1))
 #define QEMU_TIMER_ATTR_ALL      0xffffffff
 
 typedef struct QEMUTimerList QEMUTimerList;
@@ -196,6 +203,16 @@ extern int64_t qemu_virtual_clock_last;
  * the clock is disabled.
  */
 int64_t qemu_clock_expire_time_ns(QEMUClockType type);
+
+/**
+ * timer_others_expire_time_ns:
+ * @ts: the timer
+ *
+ * Returns: the expiry time of the earliest timer on @ts's timer list other
+ * than @ts, in the clock's time base, or -1 if there is none or the clock
+ * is disabled.
+ */
+int64_t timer_others_expire_time_ns(QEMUTimer *ts);
 
 /**
  * qemu_clock_deadline_ns_all:

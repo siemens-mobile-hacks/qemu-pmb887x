@@ -8,6 +8,9 @@
 #define GSM_XCCH_BLOCK_BYTES 23
 #define GSM_XCCH_BLOCK_BURSTS 4
 #define GSM_RACH_CODED_BITS 36
+/* PMB887X-WEB FEATURE (relay) */
+#define GSM_XCCH_CODED_BITS 456
+#define GSM_TCHFS_BITS 260
 
 /**
  * gsm_normal_burst: fill @burst with a normal burst of training sequence @tsc
@@ -69,3 +72,13 @@ void gsm_uplink_normal_burst_data(const GSMUplinkBurst *burst, size_t start, uin
  * that begins at @start in @burst.
  */
 void gsm_uplink_access_burst_data(const GSMUplinkBurst *burst, size_t start, uint8_t data[GSM_RACH_CODED_BITS]);
+
+/*
+ * PMB887X-WEB FEATURE (relay), gsm-relay.c: TCH/F channel coding, the 456 coded bits of a
+ * block in order (the caller interleaves them over 8 bursts). Bits one a byte;
+ * soft bits as gsm_xcch_decode.
+ */
+void gsm_xcch_code_bits(const uint8_t block[GSM_XCCH_BLOCK_BYTES], uint8_t coded[GSM_XCCH_CODED_BITS]);
+bool gsm_xcch_decode_bits(const uint8_t soft_bits[GSM_XCCH_CODED_BITS], uint8_t block[GSM_XCCH_BLOCK_BYTES]);
+void gsm_tchfs_code_bits(const uint8_t d[GSM_TCHFS_BITS], uint8_t coded[GSM_XCCH_CODED_BITS]);
+bool gsm_tchfs_decode_bits(const uint8_t soft_bits[GSM_XCCH_CODED_BITS], uint8_t d[GSM_TCHFS_BITS]);

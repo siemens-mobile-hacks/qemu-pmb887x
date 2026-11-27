@@ -110,6 +110,19 @@ AioContext *qemu_coroutine_get_aio_context(Coroutine *co);
  */
 Coroutine *qemu_coroutine_self(void);
 
+/*
+ * PMB887X-WEB WASM PORT: mark the calling thread as one whose stack can never be unwound
+ * by a coroutine switch (Asyncify allowlist, see util/coroutine-wasm.c);
+ * a switch there aborts instead of derailing.  No-op elsewhere.
+ */
+#ifdef __EMSCRIPTEN__
+void qemu_coroutine_forbid_current_thread(void);
+bool qemu_coroutine_current_thread_forbidden(void);
+#else
+static inline void qemu_coroutine_forbid_current_thread(void) {}
+static inline bool qemu_coroutine_current_thread_forbidden(void) { return false; }
+#endif
+
 /**
  * Return whether or not currently inside a coroutine
  *

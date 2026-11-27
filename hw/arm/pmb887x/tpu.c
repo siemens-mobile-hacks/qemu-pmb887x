@@ -161,6 +161,7 @@ struct pmb887x_tpu_t {
 	int64_t start;
 	uint64_t start_ticks;
 	int64_t next;
+	int64_t armed;
 	uint32_t frame_ticks;
 	uint32_t next_frame_ticks;
 	bool frame_corrected;
@@ -649,12 +650,12 @@ static void tpu_finish_frame(pmb887x_tpu_t *p) {
 	}
 }
 
-static void tpu_update_timer(pmb887x_tpu_t *p) {
-	if (!p->enabled) {
-		timer_del(p->timer);
-		return;
-	}
-
+/*
+ * Bring the counter, the frame, the interrupts and the event list up to
+ * the current virtual time and recompute p->next.  Everything
+ * tpu_update_timer() does except arming the QEMU timer.
+ */
+static void tpu_advance(pmb887x_tpu_t *p) {
 	uint64_t elapsed_ticks = tpu_get_elapsed_ticks(p);
 	p->counter += elapsed_ticks - p->start_ticks;
 	p->start_ticks = elapsed_ticks;
@@ -665,7 +666,25 @@ static void tpu_update_timer(pmb887x_tpu_t *p) {
 	p->next = tpu_counter_time(p, p->frame_ticks);
 	p->next = tpu_run_irq(p, p->counter, p->next);
 	p->next = tpu_run_events(p, p->counter, p->next);
-	timer_mod(p->timer, p->next);
+}
+
+static void tpu_update_timer(pmb887x_tpu_t *p) {
+	if (!p->enabled) {
+		timer_del(p->timer);
+		return;
+	}
+
+	tpu_advance(p);
+
+	/*
+	 * WASM PORT FAST PATH (removable): D7, re-arm only when the deadline
+	 * moved or the timer is not pending; every TPU register write ends
+	 * here, and timer_mod() takes and walks the timer list.
+	 */
+	if (p->armed != p->next || !timer_pending(p->timer)) {
+		p->armed = p->next;
+		timer_mod(p->timer, p->next);
+	}
 }
 
 static void tpu_timer_callback(void *opaque) {
@@ -686,8 +705,6 @@ static void tpu_apply_offset(pmb887x_tpu_t *p) {
 
 static void tpu_update_state(pmb887x_tpu_t *p) {
 	bool was_enabled = p->enabled;
-	if (was_enabled)
-		tpu_update_timer(p);
 
 	// Input freq for module
 	uint32_t ftpu = pmb887x_clc_get_hz(&p->clc);
@@ -709,6 +726,20 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 	}
 	uint32_t new_freq = new_input_hz / TPU_COUNTER_INPUT_DIVIDER;
 	
+	bool new_enabled = pmb887x_clc_is_enabled(&p->clc) && new_freq > 0 &&
+		(p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
+
+	/*
+	 * WASM PORT FAST PATH (removable): D7, advance at the old rate only
+	 * when a rate, enable or TINI change consumes it; otherwise
+	 * tpu_update_timer() below advances once, at the same instant and
+	 * rate, and nothing in between reads the counter.
+	 */
+	if (was_enabled && (p->counter_input_hz != new_input_hz || p->freq != new_freq ||
+			    p->enabled != new_enabled || !(p->param & TPU_PARAM_TINI))) {
+		tpu_advance(p);
+	}
+
 	// Reset counter when TPU_PARAM_TINI=0
 	if (!(p->param & TPU_PARAM_TINI)) {
 		p->counter = 0;
@@ -723,7 +754,6 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->triggers = 0;
 	}
 	
-	bool enabled = pmb887x_clc_is_enabled(&p->clc) && new_freq > 0 && (p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
 	if (p->counter_input_hz != new_input_hz) {
 		p->counter_input_hz = new_input_hz;
 		p->start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
@@ -731,9 +761,9 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		if (new_input_hz == 0)
 			tpu_rfssc_abort(p, p->start);
 	}
-	if (p->freq != new_freq || p->enabled != enabled) {
+	if (p->freq != new_freq || p->enabled != new_enabled) {
 		p->freq = new_freq;
-		p->enabled = enabled;
+		p->enabled = new_enabled;
 		clock_update_hz(p->gsm_clock, p->freq);
 		DEBUG_LOG(&p->dbg, "input=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_clc_get_input_hz(&p->clc), ftpu,
 			p->freq, p->enabled ? "ON" : "OFF");
@@ -938,6 +968,22 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	return value;
 }
 
+/*
+ * WASM PORT FAST PATH (removable): D7, a RAM word moves p->next only if it
+ * is in the event tpu_run_events() stopped on (ceap..ceap+2).  The scan
+ * re-reads RAM and caches nothing, and any other word is read no earlier
+ * than p->next or the next frame, when the armed timer rescans the list.
+ */
+static bool tpu_ram_write_moves_deadline(pmb887x_tpu_t *p, uint32_t offset) {
+	uint32_t word = (offset - TPU_RAM0) / TPU_RAM_WORD_STRIDE;
+
+	if (word < TPU_TIMER_RAM_BASE || p->events_finished)
+		return false;
+
+	word -= TPU_TIMER_RAM_BASE;
+	return word >= p->ceap && word < p->ceap + TPU_EVENT_WORDS;
+}
+
 static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
@@ -1080,6 +1126,8 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE - 1):
 			tpu_ram_write(p, haddr, value, size);
+			if (!tpu_ram_write_moves_deadline(p, haddr))
+				return;
 			break;
 
 		case TPU_RFSSC_SRC:

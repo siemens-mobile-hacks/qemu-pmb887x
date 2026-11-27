@@ -473,6 +473,33 @@ size_t dsp_i2s_get_cycles_until_receive_interrupt(const dsp_device_t *device) {
 	return DIV_ROUND_UP(remaining_phase, cycle_phase);
 }
 
+/* WASM PORT FAST PATH (removable): for dsp_bus_get_horizon() */
+static size_t i2s_cycles_until_frame(const i2s_state_t *state, bool transmit, uint16_t configuration, uint64_t phase) {
+	uint64_t cycle_phase;
+	uint64_t frame_phase;
+
+	if (!i2s_frame_phase_get(state, transmit, configuration, &cycle_phase, &frame_phase))
+		return SIZE_MAX;
+	if (phase >= frame_phase)
+		return 0;
+	return MIN(DIV_ROUND_UP(frame_phase - phase, cycle_phase), (uint64_t) SIZE_MAX);
+}
+
+size_t dsp_i2s_get_cycles_until_frame(const dsp_device_t *device) {
+	const i2s_state_t *state = device->state;
+	size_t cycles = SIZE_MAX;
+
+	if (i2s_transmit_active(state)) {
+		cycles = i2s_cycles_until_frame(state, true, state->registers[TEAK_I2S_TXCONF],
+			state->transmit_phase);
+	}
+	if (i2s_receive_active(state)) {
+		cycles = MIN(cycles, i2s_cycles_until_frame(state, false, state->registers[TEAK_I2S_RXCONF],
+			state->receive_phase));
+	}
+	return cycles;
+}
+
 bool dsp_i2s_is_active(const dsp_device_t *device) {
 	const i2s_state_t *state = device->state;
 	return i2s_transmit_active(state) || i2s_receive_active(state);

@@ -54,6 +54,8 @@ DEF_HELPER_2(exception_swstep, noreturn, env, i32)
 DEF_HELPER_2(exception_pc_alignment, noreturn, env, vaddr)
 DEF_HELPER_1(setend, void, env)
 DEF_HELPER_2(wfi, void, env, i32)
+/* PMB887X-WEB FEATURE (card assist): hook before the insn at arm_pc_hook_addr (see cpu.h) */
+DEF_HELPER_1(pmb887x_pc_hook, void, env)
 DEF_HELPER_2(wfe, void, env, i32)
 DEF_HELPER_2(wfit, void, env, i32)
 DEF_HELPER_2(wfet, void, env, i32)
@@ -65,6 +67,12 @@ DEF_HELPER_1(sev, void, env)
 
 DEF_HELPER_3(cpsr_write, void, env, i32, i32)
 DEF_HELPER_2(cpsr_write_eret, void, env, i32)
+#ifdef CONFIG_TCG_WASM64
+DEF_HELPER_2(svc_inline, void, env, i32)
+/* WASM PORT FAST PATH (removable): w64-fill.c */
+DEF_HELPER_4(w64_fill, void, env, cptr, i32, i32)
+DEF_HELPER_5(w64_blit, void, env, i32, i32, i32, i32)
+#endif
 DEF_HELPER_1(cpsr_read, i32, env)
 
 DEF_HELPER_3(v7m_msr, void, env, i32, i32)

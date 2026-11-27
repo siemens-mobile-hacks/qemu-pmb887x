@@ -111,19 +111,25 @@ void sdbus_set_voltage(SDBus *sdbus, uint16_t millivolts)
     }
 }
 
+/* PMB887X-WEB FEATURE (card assist): see include/hw/sd/sd.h */
+void (*sdbus_command_observer)(SDBus *sdbus, const SDRequest *req, size_t rlen);
+
 size_t sdbus_do_command(SDBus *sdbus, SDRequest *req,
                         uint8_t *resp, size_t respsz)
 {
     SDState *card = get_card(sdbus);
+    size_t rlen = 0;
 
     trace_sdbus_command(sdbus_name(sdbus), req->cmd, req->arg);
     if (card) {
         SDCardClass *sc = SDMMC_COMMON_GET_CLASS(card);
 
-        return sc->do_command(card, req, resp, respsz);
+        rlen = sc->do_command(card, req, resp, respsz);
     }
-
-    return 0;
+    if (sdbus_command_observer) {
+        sdbus_command_observer(sdbus, req, rlen);
+    }
+    return rlen;
 }
 
 void sdbus_write_byte(SDBus *sdbus, uint8_t value)

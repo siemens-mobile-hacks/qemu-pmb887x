@@ -4,6 +4,9 @@
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/dsp/tcg.h"
 #include "hw/arm/pmb887x/dsp/runtime.h"
+#ifdef CONFIG_TCG_WASM64
+#include "qemu/w64-low.h"
+#endif
 
 #define DSP_SLICE_CYCLES	4096
 #define DSP_RESET_VECTOR_WORDS	2
@@ -311,6 +314,12 @@ dsp_runtime_t *dsp_runtime_create(
 	size_t fixed_data_words = config->data_bank_base - config->data_rom_base;
 	size_t data_bank_words = config->shared_base - config->data_bank_base;
 
+#ifdef CONFIG_TCG_WASM64
+	/* WASM PORT FAST PATH (removable): the runtime, with the core's state, at the bottom of memory (qemu/w64-low.h) */
+	QEMU_BUILD_BUG_ON(W64_LOW_DSP + sizeof(dsp_runtime_t) > W64_LOW_CPU);
+	runtime = w64_low_place(W64_LOW_DSP, sizeof(dsp_runtime_t));
+	if (runtime == NULL)
+#endif
 	runtime = g_new0(dsp_runtime_t, 1);
 	debug_channel_init_child(&runtime->dbg, dbg, "TCG");
 	runtime->config = config;
@@ -402,6 +411,10 @@ void dsp_runtime_destroy(dsp_runtime_t *runtime) {
 	g_free(runtime->data);
 	g_free(runtime->program);
 	debug_channel_cleanup(&runtime->dbg);
+#ifdef CONFIG_TCG_WASM64
+	if (w64_low_release(runtime))
+		return;
+#endif
 	g_free(runtime);
 }
 
@@ -694,6 +707,10 @@ uint16_t dsp_runtime_get_outputs(dsp_runtime_t *runtime) {
 
 uint32_t dsp_runtime_get_pc(const dsp_runtime_t *runtime) {
 	return qatomic_read(&runtime->core.state.pc);
+}
+
+uint32_t dsp_runtime_get_trace_pc(const dsp_runtime_t *runtime) {
+	return qatomic_read(&runtime->core.state.trace_pc);
 }
 
 uint64_t dsp_runtime_get_cache_compiles(const dsp_runtime_t *runtime) {

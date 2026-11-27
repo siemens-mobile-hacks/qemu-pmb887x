@@ -53,6 +53,10 @@
 #include "sdmmc-internal.h"
 #include "trace.h"
 #include "crypto/hmac.h"
+#ifdef __EMSCRIPTEN__   /* PMB887X-WEB WASM PORT */
+#include "qemu/coroutine-core.h"
+#include "sd-wasm.h"
+#endif
 
 //#define DEBUG_SD 1
 
@@ -207,6 +211,9 @@ struct SDState {
     uint8_t dat_lines;
     bool cmd_line;
     char *preset_auth_key;
+#ifdef __EMSCRIPTEN__
+    bool wasm_inserted;     /* PMB887X-WEB WASM PORT: see sd_get_inserted() */
+#endif
 };
 
 static void sd_realize(DeviceState *dev, Error **errp);
@@ -964,7 +971,22 @@ static void sd_reset(DeviceState *dev)
 
 static bool sd_get_inserted(SDState *sd)
 {
+#ifdef __EMSCRIPTEN__
+    /*
+     * PMB887X-WEB WASM PORT (porting necessity): blk_is_inserted() always
+     * runs a coroutine, which the vCPU thread cannot (sd_blk_io() below),
+     * and the controller asks for every command and data byte. The main
+     * loop, where the medium changes (sd_cardchange(), sd_realize()),
+     * keeps the answer for the vCPU thread.
+     */
+    if (qemu_coroutine_current_thread_forbidden()) {
+        return sd->wasm_inserted;
+    }
+    sd->wasm_inserted = sd->blk && blk_is_inserted(sd->blk);
+    return sd->wasm_inserted;
+#else
     return sd->blk && blk_is_inserted(sd->blk);
+#endif
 }
 
 static bool sd_get_readonly(SDState *sd)
@@ -992,6 +1014,13 @@ static void sd_cardchange(void *opaque, bool load, Error **errp)
         trace_sdcard_ejected();
     }
 
+    /*
+     * PMB887X-WEB WASM PORT: a card its slot let go while sd_blk_io() held
+     * it is still the drive's device, without a bus
+     */
+    if (!qdev_get_parent_bus(dev)) {
+        return;
+    }
     sdbus = SD_BUS(qdev_get_parent_bus(dev));
     sdbus_set_inserted(sdbus, inserted);
     if (inserted) {
@@ -1122,11 +1151,23 @@ static const VMStateDescription sd_vmstate = {
     },
 };
 
+static int sd_blk_io(SDState *sd, int64_t addr, int64_t len, bool is_write)
+{
+#ifdef __EMSCRIPTEN__
+    /* PMB887X-WEB WASM PORT: not from the vCPU thread (sd-wasm.c) */
+    if (qemu_coroutine_current_thread_forbidden()) {
+        return sd_wasm_blk_io(OBJECT(sd), sd->blk, addr, len, sd->data, is_write);
+    }
+#endif
+    return is_write ? blk_pwrite(sd->blk, addr, len, sd->data, 0)
+                    : blk_pread(sd->blk, addr, len, sd->data, 0);
+}
+
 static void sd_blk_read(SDState *sd, uint64_t addr, uint32_t len)
 {
     trace_sdcard_read_block(addr, len);
     addr += sd_part_offset(sd);
-    if (!sd->blk || blk_pread(sd->blk, addr, len, sd->data, 0) < 0) {
+    if (!sd->blk || sd_blk_io(sd, addr, len, false) < 0) {   /* PMB887X-WEB WASM PORT */
         fprintf(stderr, "sd_blk_read: read error on host side\n");
     }
 }
@@ -1135,7 +1176,7 @@ static void sd_blk_write(SDState *sd, uint64_t addr, uint32_t len)
 {
     trace_sdcard_write_block(addr, len);
     addr += sd_part_offset(sd);
-    if (!sd->blk || blk_pwrite(sd->blk, addr, len, sd->data, 0) < 0) {
+    if (!sd->blk || sd_blk_io(sd, addr, len, true) < 0) {   /* PMB887X-WEB WASM PORT */
         fprintf(stderr, "sd_blk_write: write error on host side\n");
     }
 }
@@ -2513,7 +2554,7 @@ static size_t sd_do_command(SDState *sd, SDRequest *req,
     int rsplen;
     bool keeps_transfer;
 
-    if (!sd->blk || !blk_is_inserted(sd->blk)) {
+    if (!sd_get_inserted(sd)) {     /* PMB887X-WEB WASM PORT: was blk_is_inserted() */
         return 0;
     }
 
@@ -2698,7 +2739,7 @@ static size_t sd_write_data(SDState *sd, const void *buf, size_t length)
     int i;
     const uint8_t *value = buf;
 
-    if (!sd->blk || !blk_is_inserted(sd->blk)) {
+    if (!sd_get_inserted(sd)) {     /* PMB887X-WEB WASM PORT: was blk_is_inserted() */
         return length;
     }
 
@@ -2846,7 +2887,7 @@ static size_t sd_read_data(SDState *sd, void *buf, size_t length)
     uint32_t io_len;
     uint8_t *value = buf;
 
-    if (!sd->blk || !blk_is_inserted(sd->blk)) {
+    if (!sd_get_inserted(sd)) {     /* PMB887X-WEB WASM PORT: was blk_is_inserted() */
         memset(buf, dummy_byte, length);
         return length;
     }
@@ -3188,6 +3229,9 @@ static void sd_realize(DeviceState *dev, Error **errp)
         }
         blk_set_dev_ops(sd->blk, &sd_block_ops, sd);
     }
+#ifdef __EMSCRIPTEN__
+    sd_get_inserted(sd);    /* PMB887X-WEB WASM PORT: fills the cache */
+#endif
     if (!QEMU_IS_ALIGNED(sd->boot_part_size, 128 * KiB) ||
         sd->boot_part_size > 255 * 128 * KiB) {
         g_autofree char *size_str = size_to_str(sd->boot_part_size);

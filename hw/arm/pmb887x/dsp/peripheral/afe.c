@@ -2,6 +2,7 @@
 
 #include "hw/audio/audio-line.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
+#include "hw/arm/pmb887x/dsp/afe-mic.h"   /* PMB887X-WEB FEATURE (mic) */
 #include "hw/arm/pmb887x/gen/dsp.h"
 
 #define AFE_REGISTER_COUNT	(TEAK_AFE_RINGCTRL + 1)
@@ -329,7 +330,8 @@ static void afe_transmit_sample(afe_state_t *state) {
 		state->host.data_write(state->host.opaque, state->ram_base + state->transmit_position,
 			AFE_POWER_DOWN_SAMPLES[state->transmit_position]);
 	} else {
-		state->host.data_write(state->host.opaque, state->ram_base + state->transmit_position, 0);
+		/* PMB887X-WEB FEATURE (mic): the mic ADC's input, silence by default (afe-mic.c) */
+		state->host.data_write(state->host.opaque, state->ram_base + state->transmit_position, pmb887x_afe_mic_next());
 	}
 
 	state->transmit_position++;

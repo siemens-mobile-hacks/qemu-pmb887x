@@ -101,6 +101,8 @@ struct TCGLabel {
     bool present;
     bool has_value;
     uint16_t id;
+    /* WASM PORT FAST PATH (removable): branches to it are rarely taken */
+    bool cold;
     union {
         uintptr_t value;
         const tcg_insn_unit *value_ptr;
@@ -936,7 +938,7 @@ static inline size_t tcg_current_code_size(TCGContext *s)
 #define TB_EXIT_IDXMAX    1
 #define TB_EXIT_REQUESTED 3
 
-#ifdef CONFIG_TCG_INTERPRETER
+#ifdef HAVE_TCG_QEMU_TB_EXEC
 uintptr_t tcg_qemu_tb_exec(CPUArchState *env, const void *tb_ptr);
 #else
 typedef uintptr_t tcg_prologue_fn(CPUArchState *env, const void *tb_ptr);

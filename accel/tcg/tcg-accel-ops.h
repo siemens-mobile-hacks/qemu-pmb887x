@@ -22,5 +22,6 @@ void tcg_kick_vcpu_thread(CPUState *cpu);
 void tcg_vcpu_timers_start(CPUState *cpu);
 void tcg_vcpu_timers_wait_io_event(CPUState *cpu);
 bool tcg_vcpu_timers_prepare_exec(CPUState *cpu);
+bool tcg_vcpu_timers_next_budget(CPUState *cpu);
 
 #endif /* TCG_ACCEL_OPS_H */

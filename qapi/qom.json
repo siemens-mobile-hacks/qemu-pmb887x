@@ -1262,13 +1262,37 @@
 #
 # @pcs1900: @arfcn is a PCS1900 channel (default: false)
 #
+# @relay: ID of a chardev to an external relay server
+#     (doc/gsm-relay.md in pmb887x-emu-web): with it the cell offers
+#     SMS, USSD, the network name and calls, served by the relay
+#     (default: none)
+#
 # Since: 11.1
 ##
 { 'struct': 'GsmBtsProperties',
   'data': { '*netdev': 'str',
             '*gsmtap': 'str',
             '*arfcn': 'uint16',
-            '*pcs1900': 'bool' } }
+            '*pcs1900': 'bool',
+            '*relay': 'str' } }   # PMB887X-WEB FEATURE (relay)
+
+# PMB887X-WEB FEATURE (card assist), to the end of the struct
+##
+# @Pmb887xCardAssistProperties:
+#
+# Properties for pmb887x-card-assist objects (pmb887x-emu-web
+# doc/sd-card.md): with it the card is taken out and put back with
+# the object's "inserted" property, and the firmware is told.
+#
+# @slot: QOM path of the sd-slot (default: the only one)
+#
+# @debug: report what the object does (default: false)
+#
+# Since: 11.1
+##
+{ 'struct': 'Pmb887xCardAssistProperties',
+  'data': { '*slot': 'str',
+            '*debug': 'bool' } }
 
 ##
 # @GsmOsmotrxProperties:
@@ -1347,6 +1371,7 @@
     'monitor-hmp',
     'monitor-qmp',
     'pef-guest',
+    'pmb887x-card-assist',   # PMB887X-WEB FEATURE (card assist)
     { 'name': 'pr-manager-helper',
       'if': 'CONFIG_LINUX' },
     'qtest',
@@ -1428,6 +1453,7 @@
                                       'if': 'CONFIG_POSIX' },
       'monitor-hmp':                'MonitorHMPProperties',
       'monitor-qmp':                'MonitorQMPProperties',
+      'pmb887x-card-assist':        'Pmb887xCardAssistProperties',   # PMB887X-WEB FEATURE (card assist)
       'pr-manager-helper':          { 'type': 'PrManagerHelperProperties',
                                       'if': 'CONFIG_LINUX' },
       'qtest':                      'QtestProperties',

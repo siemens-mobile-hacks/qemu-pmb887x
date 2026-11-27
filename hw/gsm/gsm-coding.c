@@ -301,3 +301,66 @@ void gsm_uplink_access_burst_data(const GSMUplinkBurst *burst, size_t start, uin
     for (size_t i = 0; i < GSM_RACH_CODED_BITS; i++)
         data[i] = gsm_uplink_soft_bit(burst, data_start + i);
 }
+
+/*
+ * PMB887X-WEB FEATURE (relay), gsm-relay.c: the TCH/F channel coding without the burst
+ * mapping, which TCH/F does with block-diagonal interleaving over 8 bursts.
+ */
+void gsm_xcch_code_bits(const uint8_t block[GSM_XCCH_BLOCK_BYTES], uint8_t coded[GSM_XCCH_CODED_BITS]) {
+    uint8_t uncoded[GSM_XCCH_UNCODED_BITS];
+
+    gsm_bytes_to_bits(block, GSM_XCCH_DATA_BITS, uncoded);
+    gsm_crc_to_bits(gsm_crc(uncoded, GSM_XCCH_DATA_BITS, GSM_FIRE_POLYNOMIAL, GSM_XCCH_PARITY_BITS),
+        GSM_XCCH_PARITY_BITS, &uncoded[GSM_XCCH_DATA_BITS]);
+    gsm_conv_encode(uncoded, GSM_XCCH_UNCODED_BITS, coded);
+}
+
+bool gsm_xcch_decode_bits(const uint8_t soft_bits[GSM_XCCH_CODED_BITS], uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
+    uint8_t uncoded[GSM_XCCH_UNCODED_BITS];
+    uint8_t parity[GSM_XCCH_PARITY_BITS];
+
+    gsm_conv_decode(soft_bits, GSM_XCCH_UNCODED_BITS, uncoded);
+    gsm_crc_to_bits(gsm_crc(uncoded, GSM_XCCH_DATA_BITS, GSM_FIRE_POLYNOMIAL, GSM_XCCH_PARITY_BITS),
+        GSM_XCCH_PARITY_BITS, parity);
+    if (memcmp(parity, &uncoded[GSM_XCCH_DATA_BITS], sizeof(parity)) != 0)
+        return false;
+    gsm_bits_to_bytes(uncoded, GSM_XCCH_DATA_BITS, block);
+    return true;
+}
+
+#define GSM_TCHFS_CLASS1A_BITS 50
+#define GSM_TCHFS_CLASS1_BITS 182
+#define GSM_TCHFS_UNCODED_BITS 185
+#define GSM_TCHFS_PARITY_POLYNOMIAL 0x3
+
+/* 45.003 3.1: a 260-bit GSM-FR frame in d-bit order (one bit a byte) -> 456 coded bits */
+void gsm_tchfs_code_bits(const uint8_t d[GSM_TCHFS_BITS], uint8_t coded[GSM_XCCH_CODED_BITS]) {
+    uint8_t u[GSM_TCHFS_UNCODED_BITS];
+
+    for (size_t i = 0; i < GSM_TCHFS_CLASS1_BITS / 2; i++) {
+        u[i] = d[2 * i];
+        u[GSM_TCHFS_UNCODED_BITS - 1 - i] = d[2 * i + 1];
+    }
+    gsm_crc_to_bits(gsm_crc(d, GSM_TCHFS_CLASS1A_BITS, GSM_TCHFS_PARITY_POLYNOMIAL, 3), 3,
+        &u[GSM_TCHFS_CLASS1_BITS / 2]);
+    gsm_conv_encode(u, GSM_TCHFS_UNCODED_BITS, coded);
+    memcpy(&coded[2 * (GSM_TCHFS_UNCODED_BITS + GSM_CONV_MEMORY)], &d[GSM_TCHFS_CLASS1_BITS],
+        GSM_TCHFS_BITS - GSM_TCHFS_CLASS1_BITS);
+}
+
+/* the reverse; false when the class 1a parity fails (a bad frame) */
+bool gsm_tchfs_decode_bits(const uint8_t soft_bits[GSM_XCCH_CODED_BITS], uint8_t d[GSM_TCHFS_BITS]) {
+    uint8_t u[GSM_TCHFS_UNCODED_BITS];
+    uint8_t parity[3];
+
+    gsm_conv_decode(soft_bits, GSM_TCHFS_UNCODED_BITS, u);
+    for (size_t i = 0; i < GSM_TCHFS_CLASS1_BITS / 2; i++) {
+        d[2 * i] = u[i];
+        d[2 * i + 1] = u[GSM_TCHFS_UNCODED_BITS - 1 - i];
+    }
+    for (size_t i = GSM_TCHFS_CLASS1_BITS; i < GSM_TCHFS_BITS; i++)
+        d[i] = soft_bits[2 * (GSM_TCHFS_UNCODED_BITS + GSM_CONV_MEMORY) + i - GSM_TCHFS_CLASS1_BITS] >=
+            GSM_SOFT_BIT_THRESHOLD;
+    gsm_crc_to_bits(gsm_crc(d, GSM_TCHFS_CLASS1A_BITS, GSM_TCHFS_PARITY_POLYNOMIAL, 3), 3, parity);
+    return memcmp(parity, &u[GSM_TCHFS_CLASS1_BITS / 2], sizeof(parity)) == 0;
+}

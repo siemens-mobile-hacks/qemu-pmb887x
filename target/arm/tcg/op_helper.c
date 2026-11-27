@@ -27,6 +27,19 @@
 #include "accel/tcg/probe.h"
 #include "cpregs.h"
 
+/* PMB887X-WEB FEATURE (card assist): see cpu.h */
+uint32_t arm_pc_hook_addr = UINT32_MAX;
+void (*arm_pc_hook_fn)(CPUARMState *env, uintptr_t ra);
+
+void HELPER(pmb887x_pc_hook)(CPUARMState *env)
+{
+    void (*fn)(CPUARMState *env, uintptr_t ra) = qatomic_read(&arm_pc_hook_fn);
+
+    if (fn) {
+        fn(env, GETPC());
+    }
+}
+
 #define SIGNBIT (uint32_t)0x80000000
 #define SIGNBIT64 ((uint64_t)1 << 63)
 
@@ -784,19 +797,52 @@ uint32_t HELPER(cpsr_read)(CPUARMState *env)
     return cpsr_read(env) & ~CPSR_EXEC;
 }
 
+/*
+ * On wasm64 the TB that wrote CPSR continues through goto_ptr rather than
+ * a plain exit (gen_set_psr / gen_rfe): if any interrupt is pending,
+ * including one this write unmasked, end the next TB at its start.
+ */
+static void cpsr_write_check_irq(CPUARMState *env)
+{
+#ifdef CONFIG_TCG_WASM64
+    CPUState *cs = env_cpu(env);
+
+    if (qatomic_read(&cs->interrupt_request)) {
+        qatomic_set(&cs->neg.icount_decr.u16.high, -1);
+    }
+#endif
+}
+
 void HELPER(cpsr_write)(CPUARMState *env, uint32_t val, uint32_t mask)
 {
     cpsr_write(env, val, mask, CPSRWriteByInstr);
+    cpsr_write_check_irq(env);
 }
 
 /* Write the CPSR for a 32-bit exception return */
 void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
 {
+    ARMCPU *cpu = env_archcpu(env);
     uint32_t mask;
+    /*
+     * wasm64: the hook lists are empty on a core without a PMU or GICv3
+     * cpuif, so no BQL pair around them.  The return still has to end a
+     * hold that bql_unlock_mmio() deferred, as the pair's unlock did, or
+     * an idle spin entered by it keeps the BQL from the main loop until
+     * the budget ends.
+     */
+#ifdef CONFIG_TCG_WASM64
+    bool hooks = !QLIST_EMPTY(&cpu->pre_el_change_hooks) ||
+                 !QLIST_EMPTY(&cpu->el_change_hooks);
+#else
+    bool hooks = true;
+#endif
 
-    bql_lock();
-    arm_call_pre_el_change_hook(env_archcpu(env));
-    bql_unlock();
+    if (hooks) {
+        bql_lock();
+        arm_call_pre_el_change_hook(cpu);
+        bql_unlock();
+    }
 
     mask = aarch32_cpsr_valid_mask(env->features, &env_archcpu(env)->isar);
     cpsr_write(env, val, mask, CPSRWriteExceptionReturn);
@@ -807,12 +853,29 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
      * state. Do the masking now.
      */
     env->regs[15] &= (env->thumb ? ~1 : ~3);
+#ifndef CONFIG_TCG_WASM64
     arm_rebuild_hflags(env);
+#endif
 
-    bql_lock();
-    arm_call_el_change_hook(env_archcpu(env));
-    bql_unlock();
+    if (hooks) {
+        bql_lock();
+        arm_call_el_change_hook(cpu);
+        bql_unlock();
+    }
+#ifdef CONFIG_TCG_WASM64
+    else {
+        bql_release_lazy();
+    }
+#endif
+    cpsr_write_check_irq(env);
 }
+
+#ifdef CONFIG_TCG_WASM64
+void HELPER(svc_inline)(CPUARMState *env, uint32_t syndrome)
+{
+    arm_take_svc_aarch32(env, syndrome);
+}
+#endif
 
 /* Access to user mode registers from privileged modes.  */
 uint32_t HELPER(get_user_reg)(CPUARMState *env, uint32_t regno)

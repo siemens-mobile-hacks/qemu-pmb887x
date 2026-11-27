@@ -42,6 +42,7 @@ void audio_line_sink_port_init(AudioLineSinkPort *port, DeviceState *dev,
                                const char *name, AudioLineSink *sink)
 {
     port->sink = sink;
+    port->klass = AUDIO_LINE_SINK_GET_CLASS(sink);
     qdev_init_bus_port(dev, &port->parent, name, TYPE_AUDIO_LINE_BUS,
                        audio_line_sink_port_create_endpoint);
 }
@@ -107,11 +108,16 @@ void audio_line_write(AudioLineBus *bus, unsigned stream,
 {
     BusChild *kid;
 
-    QTAILQ_FOREACH(kid, &BUS(bus)->children, sibling) {
-        AudioLineSinkPort *port = audio_line_child_get_port(kid);
+    /*
+     * WASM PORT FAST PATH (removable): runs per sample block, so no checked
+     * casts and no interface class lookup, as in i2s_tx_write().
+     */
+    QTAILQ_FOREACH(kid, &bus->parent_obj.children, sibling) {
+        AudioLineSinkPort *port = container_of(kid->child,
+                                               AudioLineSinkEndpoint,
+                                               parent_obj)->port;
 
-        AUDIO_LINE_SINK_GET_CLASS(port->sink)->write(port, stream, frames,
-                                                     frame_count);
+        port->klass->write(port, stream, frames, frame_count);
     }
 }
 

@@ -41,7 +41,10 @@ struct S1D13716State {
 };
 
 static uint32_t s1d13716_transfer(SSIPeripheral *dev, uint32_t in) {
-    S1D13716State *s = S1D13716(dev);
+    /* WASM PORT FAST PATH (removable): per transferred byte; the class
+     * installs this transfer only on S1D13716 peripherals, so the checked
+     * cast is skipped */
+    S1D13716State *s = (S1D13716State *)dev;
     uint32_t response = 0;
 
     if (!s->cs_app && s->cs_lcd)
@@ -76,6 +79,36 @@ static uint32_t s1d13716_transfer(SSIPeripheral *dev, uint32_t in) {
     }
 
     return response;
+}
+
+/*
+ * WASM PORT FAST PATH (removable): pass-through is the display stream, so the
+ * whole block goes to the LCD.  Anything addressed to the chip's own
+ * registers goes word by word.
+ */
+static void s1d13716_transfer_block(SSIPeripheral *dev, const uint32_t *tx, uint32_t *rx, size_t count) {
+    S1D13716State *s = (S1D13716State *)dev;
+
+    if (!s->cs_app && s->cs_lcd) {
+        ssi_transfer_block(s->bus, tx, rx, count);
+        return;
+    }
+    for (size_t i = 0; i < count; i++) {
+        uint32_t reply = s1d13716_transfer(dev, tx[i]);
+        if (rx)
+            rx[i] = reply;
+    }
+}
+
+static void s1d13716_transfer_bytes(SSIPeripheral *dev, const uint8_t *tx, size_t count) {
+    S1D13716State *s = (S1D13716State *)dev;
+
+    if (!s->cs_app && s->cs_lcd) {
+        ssi_transfer_bytes(s->bus, tx, count);
+        return;
+    }
+    for (size_t i = 0; i < count; i++)
+        s1d13716_transfer(dev, tx[i]);
 }
 
 static void s1d13716_rs_handler(void *opaque, int _n, int level) {
@@ -132,6 +165,8 @@ static void s1d13716_class_init(ObjectClass *klass, const void *_data) {
     DEVICE_CLASS(klass)->unrealize = s1d13716_unrealize;
     k->realize = s1d13716_realize;
     k->transfer = s1d13716_transfer;
+    k->transfer_block = s1d13716_transfer_block;
+    k->transfer_bytes = s1d13716_transfer_bytes;
     k->cs_polarity = SSI_CS_LOW;
 }
 

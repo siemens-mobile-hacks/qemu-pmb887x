@@ -92,6 +92,12 @@ system_ss.add(when: vnc, if_true: files('vnc-system.c'), if_false: files('vnc-st
 
 ui_modules = {}
 
+if host_os == 'emscripten'
+  wasm_ss = ss.source_set()
+  wasm_ss.add(when: [pixman], if_true: [files('wasm.c')])
+  ui_modules += {'wasm' : wasm_ss}
+endif
+
 if curses.found()
   curses_ss = ss.source_set()
   curses_ss.add(when: [curses, iconv], if_true: [files('curses.c'), pixman])

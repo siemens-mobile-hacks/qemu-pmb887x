@@ -692,6 +692,15 @@ hardening_flags = [
     '-fzero-init-padding-bits=all',
 ]
 
+# WASM PORT FAST PATH (removable): B1, no zeroing of stack variables on
+# emscripten (the last -ftrivial-auto-var-init wins).  The browser build
+# runs in the tab's sandbox already; native keeps the zeroing, so an
+# uninitialized read the wasm build starts to depend on shows up as a
+# lockstep divergence between the two.
+if host_os == 'emscripten'
+  hardening_flags += '-ftrivial-auto-var-init=uninitialized'
+endif
+
 # Zero out registers used during a function call
 # upon its return. This makes it harder to assemble
 # ROP gadgets into something usable
@@ -924,8 +933,8 @@ if have_tcg
       error('Unsupported CPU @0@, try --enable-tcg-interpreter'.format(cpu))
     endif
   elif host_arch == 'wasm64'
-    if not get_option('tcg_interpreter')
-      error('WebAssembly host requires --enable-tcg-interpreter')
+    if get_option('tcg_interpreter')
+      error('WebAssembly host uses the wasm64 TCG backend; --enable-tcg-interpreter is not supported')
     endif
   elif get_option('tcg_interpreter')
     warning('Use of the TCG interpreter is not recommended on this host')
@@ -2283,6 +2292,8 @@ if have_system
     'pipewire': pipewire.found(),
     'sdl': sdl.found(),
     'sndio': sndio.found(),
+    # WebAudio via a ring shared with the page; built in, no dependency
+    'wasm': host_os == 'emscripten',
   }
   foreach k, v: audio_drivers_available
     config_host_data.set('CONFIG_AUDIO_' + k.to_upper(), v)
@@ -2290,7 +2301,7 @@ if have_system
 
   # Default to native drivers first, OSS second, SDL third
   audio_drivers_priority = \
-    [ 'pa', 'coreaudio', 'dsound', 'sndio', 'oss' ] + \
+    [ 'wasm', 'pa', 'coreaudio', 'dsound', 'sndio', 'oss' ] + \
     (host_os == 'linux' ? [] : [ 'sdl' ])
   audio_drivers_default = []
   foreach k: audio_drivers_priority
@@ -2497,6 +2508,7 @@ config_host_data.set('CONFIG_SOLARIS', host_os == 'sunos')
 if have_tcg
   config_host_data.set('CONFIG_TCG', 1)
   config_host_data.set('CONFIG_TCG_INTERPRETER', tcg_arch == 'tci')
+  config_host_data.set('CONFIG_TCG_WASM64', tcg_arch == 'wasm64')
 endif
 config_host_data.set('CONFIG_TPM', have_tpm)
 config_host_data.set('CONFIG_TSAN', get_option('tsan'))
@@ -2552,6 +2564,7 @@ endif
 config_host_data.set('CONFIG_SPICE', spice.found())
 config_host_data.set('CONFIG_X11', x11.found())
 config_host_data.set('CONFIG_DBUS_DISPLAY', dbus_display)
+config_host_data.set('CONFIG_WASM_UI', host_os == 'emscripten')
 config_host_data.set('CONFIG_CFI', get_option('cfi'))
 config_host_data.set('CONFIG_SELINUX', selinux.found())
 config_host_data.set('CONFIG_XEN_BACKEND', xen.found())
@@ -4386,6 +4399,10 @@ foreach target : target_dirs
     c_args += ['-DCONFIG_DEVICES="@0@-config-devices.h"'.format(target)]
     arch_srcs += config_devices_h[target]
     link_args += enable_modules ? ['@block.syms', '@qemu.syms'] : []
+    if host_os == 'emscripten'
+      # system/runstate.c: exit() with the BQL held runs the exit notifiers
+      link_args += ['-Wl,--wrap=exit']
+    endif
   else
     abi = config_target['TARGET_ABI_DIR']
     target_type='user'

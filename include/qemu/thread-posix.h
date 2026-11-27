@@ -21,10 +21,21 @@ typedef struct QemuRecMutex {
     QemuMutex m;
 } QemuRecMutex;
 
+#ifdef __EMSCRIPTEN__
+/*
+ * Asyncify-safe futex-based condition variable (see util/qemu-thread-posix.c
+ * for the rationale: pthread_cond signals are unreliable under Asyncify).
+ */
+struct QemuCond {
+    int seq;      /* bumped by every signal/broadcast; futex word */
+    int waiters;  /* number of threads blocked in qemu_cond_wait */
+};
+#else
 struct QemuCond {
     pthread_cond_t cond;
     bool initialized;
 };
+#endif
 
 struct QemuSemaphore {
     QemuMutex mutex;

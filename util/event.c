@@ -121,6 +121,12 @@ void qemu_event_reset(QemuEvent *ev)
 #endif
 }
 
+/* PMB887X-WEB WASM PORT: for a wait that has more to do meanwhile (util/qemu-timer.c) */
+bool qemu_event_is_set(QemuEvent *ev)
+{
+    return qatomic_load_acquire(&ev->value) == EV_SET;
+}
+
 void qemu_event_wait(QemuEvent *ev)
 {
     assert(ev->initialized);
