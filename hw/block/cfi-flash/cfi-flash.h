@@ -139,6 +139,7 @@ struct CFIFlashState {
     char *hex_otp1_data;
 
     uint32_t offset;
+    bool dyb_protected;
 
     uint32_t size;
     uint32_t word_program_typical_us;

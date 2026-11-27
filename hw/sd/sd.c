@@ -150,6 +150,7 @@ struct SDState {
     uint8_t csd[16];
     uint16_t rca;
     uint32_t card_status;
+    bool response_has_crc;
     uint8_t sd_status[64];
     union {
         uint8_t ext_csd[512];
@@ -503,6 +504,9 @@ static void emmc_set_cid(SDState *sd)
 #define WPGROUP_SHIFT   7        /* 2 megs */
 #define CMULT_SHIFT     9        /* 512 times HWBLOCK_SIZE */
 #define WPGROUP_SIZE    (1 << (HWBLOCK_SHIFT + SECTOR_SHIFT + WPGROUP_SHIFT))
+/* SDSC C_SIZE unit and the largest size C_SIZE encodes with 512 byte blocks */
+#define SDSC_CSIZE_UNIT (1 << (CMULT_SHIFT + HWBLOCK_SHIFT))
+#define SDSC_CSIZE_MAX_CAPACITY (4096 * SDSC_CSIZE_UNIT)
 
 static const uint8_t sd_csd_rw_mask[16] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -966,6 +970,11 @@ static bool sd_get_inserted(SDState *sd)
 static bool sd_get_readonly(SDState *sd)
 {
     return sd->wp_switch;
+}
+
+static bool sd_get_response_has_crc(SDState *sd)
+{
+    return sd->response_has_crc;
 }
 
 static void sd_cardchange(void *opaque, bool load, Error **errp)
@@ -1893,9 +1902,11 @@ static sd_rsp_type_t sd_cmd_STOP_TRANSMISSION(SDState *sd, SDRequest req)
 {
     switch (sd->state) {
     case sd_sendingdata_state:
+        sd->multi_blk_cnt = 0;
         sd->state = sd_transfer_state;
         return sd_r1b;
     case sd_receivingdata_state:
+        sd->multi_blk_cnt = 0;
         sd->state = sd_programming_state;
         /* Bzzzzzzztt .... Operation complete.  */
         sd->state = sd_transfer_state;
@@ -2272,6 +2283,12 @@ static sd_rsp_type_t sd_cmd_SEND_OP_COND(SDState *sd, SDRequest req)
         return sd_invalid_state_for_cmd(sd, req);
     }
 
+    /* An SDHC or SDXC card stays busy for a host that does not set HCS */
+    if (!sd_is_emmc(sd) && sd->size > SDSC_MAX_CAPACITY &&
+        !FIELD_EX32(req.arg, OCR, CARD_CAPACITY)) {
+        return sd_r3;
+    }
+
     /*
      * If it's the first ACMD41 since reset, we need to decide
      * whether to power up. If this is not an enquiry ACMD41,
@@ -2351,7 +2368,9 @@ static sd_rsp_type_t sd_normal_command(SDState *sd, SDRequest req)
 
     /* CMD23 (set block count) must be immediately followed by CMD18 or CMD25
      * if not, its effects are cancelled */
-    if (sd->multi_blk_cnt != 0 && !(req.cmd == 18 || req.cmd == 25)) {
+    if (sd->multi_blk_cnt != 0 && !(req.cmd == 18 || req.cmd == 25) &&
+        sd->state != sd_sendingdata_state &&
+        sd->state != sd_receivingdata_state) {
         sd->multi_blk_cnt = 0;
     }
 
@@ -2489,9 +2508,10 @@ static bool cmd_valid_while_locked(SDState *sd, unsigned cmd)
 static size_t sd_do_command(SDState *sd, SDRequest *req,
                             uint8_t *response, size_t respsz)
 {
-    int last_state;
+    int last_state = sd->state;
     sd_rsp_type_t rtype;
     int rsplen;
+    bool keeps_transfer;
 
     if (!sd->blk || !blk_is_inserted(sd->blk)) {
         return 0;
@@ -2530,8 +2550,6 @@ static size_t sd_do_command(SDState *sd, SDRequest *req,
         }
     }
 
-    last_state = sd->state;
-
     if (sd->expecting_acmd) {
         sd->expecting_acmd = false;
         rtype = sd_app_command(sd, *req);
@@ -2550,8 +2568,19 @@ static size_t sd_do_command(SDState *sd, SDRequest *req,
     }
 
 send_response:
+    /*
+     * A command that leaves the card in the data or receive state does not
+     * stop the transfer: CMD13 and CMD55 keep the state (SD Physical Layer
+     * 3.01, Table 4-31), an illegal command or a CRC error changes nothing
+     * (4.6.1), and another card's addressed command is not for this card
+     * (4.1).
+     */
+    keeps_transfer = sd->state == last_state &&
+                     (last_state == sd_sendingdata_state ||
+                      last_state == sd_receivingdata_state);
     rsplen = sd_response_size(sd, rtype);
     assert(rsplen <= respsz);
+    sd->response_has_crc = rtype != sd_r3;
 
     switch (rtype) {
     case sd_r1:
@@ -2588,8 +2617,10 @@ send_response:
          * Invalid state transition, reset implementation
          * fields to avoid OOB abuse.
          */
-        sd->data_start = 0;
-        sd->data_offset = 0;
+        if (!keeps_transfer) {
+            sd->data_start = 0;
+            sd->data_offset = 0;
+        }
         /* fall-through */
     case sd_illegal:
         break;
@@ -2609,7 +2640,9 @@ send_response:
     qemu_hexdump(stderr, "Response", response, rsplen);
 #endif
 
-    sd->current_cmd = rtype == sd_illegal ? 0 : req->cmd;
+    if (!keeps_transfer) {
+        sd->current_cmd = rtype == sd_illegal ? 0 : req->cmd;
+    }
 
     return rsplen;
 }
@@ -3137,7 +3170,9 @@ static void sd_realize(DeviceState *dev, Error **errp)
                                   "multiples of 512K", errp);
                 return;
             }
-        } else if (blk_size > 0 && !is_power_of_2(blk_size)) {
+        } else if (blk_size > 0 && !is_power_of_2(blk_size) &&
+                   (sd_is_emmc(sd) || blk_size > SDSC_CSIZE_MAX_CAPACITY ||
+                    !QEMU_IS_ALIGNED(blk_size, SDSC_CSIZE_UNIT))) {
             sd_blk_size_error(sd, blk_size, pow2ceil(blk_size), "a power of 2",
                               errp);
             return;
@@ -3241,6 +3276,7 @@ static void sdmmc_common_class_init(ObjectClass *klass, const void *data)
     sc->data_ready = sd_data_ready;
     sc->get_inserted = sd_get_inserted;
     sc->get_readonly = sd_get_readonly;
+    sc->get_response_has_crc = sd_get_response_has_crc;
 }
 
 static void sd_class_init(ObjectClass *klass, const void *data)

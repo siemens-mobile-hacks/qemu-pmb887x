@@ -30,6 +30,9 @@ config GSM_OSMOTRX
     select GSM_CODING
     select GSM_NETWORK
 
+config BCM2141
+    bool
+
 config BRIGHT_6PLA
     bool
     select GSM_AIR

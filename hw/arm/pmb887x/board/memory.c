@@ -29,7 +29,8 @@ MemoryRegion *pmb887x_board_create_nor_flash(
 	const char *id,
 	uint32_t vid,
 	const uint32_t pid[PMB887X_NOR_FLASH_PID_WORDS],
-	uint32_t offset
+	uint32_t offset,
+	bool dyb_protected
 ) {
 	DeviceState *flash_blk = qdev_find_recursive(sysbus_get_default(), "FULLFLASH");
 
@@ -51,6 +52,7 @@ MemoryRegion *pmb887x_board_create_nor_flash(
 	qdev_prop_set_uint16(flash, "pid2", pid[1]);
 	qdev_prop_set_uint16(flash, "pid3", pid[2]);
 	qdev_prop_set_uint32(flash, "offset", offset);
+	qdev_prop_set_bit(flash, "dyb-protected", dyb_protected);
 	if (flash_blk)
 		object_property_set_link(OBJECT(flash), "storage", OBJECT(flash_blk), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(flash), &error_fatal);

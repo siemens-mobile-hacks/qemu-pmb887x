@@ -820,15 +820,18 @@ ERST
 
     {
         .name       = "memsave",
-        .args_type  = "val:l,size:i,filename:s",
-        .params     = "addr size file",
-        .help       = "save to disk virtual memory dump starting at 'addr' of size 'size'",
+        .args_type  = "ignore:-i,val:l,size:i,filename:s",
+        .params     = "[-i] addr size file",
+        .help       = "save to disk virtual memory dump starting at 'addr' of size 'size'"
+                      " (-i: save unreadable pages as zeros with a warning)",
         .cmd        = hmp_memsave,
     },
 
 SRST
-``memsave`` *addr* *size* *file*
+``memsave [-i]`` *addr* *size* *file*
   save to disk virtual memory dump starting at *addr* of size *size*.
+  With ``-i``, pages with read errors are saved as zeros and each such
+  range is reported as a warning.
 ERST
 
     {

@@ -32,6 +32,8 @@ struct pmb887x_gpio_t {
 	
 	bool input_state[8][GPIOS_COUNT];
 	bool input_driven[8][GPIOS_COUNT];
+	bool external_pull[GPIOS_COUNT];
+	bool external_pull_level[GPIOS_COUNT];
 	qemu_irq pins_out[8][GPIOS_COUNT];
 
 	qemu_irq mon3_out;
@@ -39,6 +41,10 @@ struct pmb887x_gpio_t {
 
 	char **pin_names;
 	uint32_t pin_names_count;
+	uint32_t *pullup_pins;
+	uint32_t pullup_pins_count;
+	uint32_t *pulldown_pins;
+	uint32_t pulldown_pins_count;
 };
 
 static uint8_t gpio_get_mux_is(pmb887x_gpio_t *p, int pin) {
@@ -56,6 +62,9 @@ static uint8_t gpio_get_mux_os(pmb887x_gpio_t *p, int pin) {
 static bool gpio_get_pad_level(pmb887x_gpio_t *p, int id) {
 	if (p->input_driven[0][id])
 		return p->input_state[0][id];
+
+	if (p->external_pull[id])
+		return p->external_pull_level[id];
 
 	return (p->pins[id] & GPIO_PDPU) == GPIO_PDPU_PULLUP;
 }
@@ -266,10 +275,32 @@ static const char *gpio_debug_pin_suffix(const DebugChannel *ch, uint64_t offset
 	return p->pin_names[pin];
 }
 
+static bool gpio_add_external_pulls(pmb887x_gpio_t *p, const uint32_t *pins, uint32_t count, bool level, Error **errp) {
+	for (uint32_t i = 0; i < count; i++) {
+		if (pins[i] >= GPIOS_COUNT) {
+			error_setg(errp, "pull resistor pin %u is out of range", pins[i]);
+			return false;
+		}
+		if (p->external_pull[pins[i]]) {
+			error_setg(errp, "pin %u has both pullup and pulldown resistors", pins[i]);
+			return false;
+		}
+		p->external_pull[pins[i]] = true;
+		p->external_pull_level[pins[i]] = level;
+	}
+	return true;
+}
+
 static void gpio_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gpio_t *p = PMB887X_GPIO(dev);
 	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_gpio_regs);
 	p->dbg.get_reg_suffix = gpio_debug_pin_suffix;
+
+	if (!gpio_add_external_pulls(p, p->pullup_pins, p->pullup_pins_count, true, errp))
+		return;
+	if (!gpio_add_external_pulls(p, p->pulldown_pins, p->pulldown_pins_count, false, errp))
+		return;
+
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	for (int id = 0; id < GPIOS_COUNT; id++) {
 		p->pins[id] = GPIO_PS_MANUAL | GPIO_DIR_IN | GPIO_ENAQ_ON | GPIO_PDPU_PULLDOWN | GPIO_PPEN_PUSHPULL;
@@ -280,6 +311,8 @@ static void gpio_realize(DeviceState *dev, Error **errp) {
 static const Property gpio_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_gpio_t, revision, 0),
 	DEFINE_PROP_ARRAY("pin-names", pmb887x_gpio_t, pin_names_count, pin_names, qdev_prop_string, char *),
+	DEFINE_PROP_ARRAY("pullup-pins", pmb887x_gpio_t, pullup_pins_count, pullup_pins, qdev_prop_uint32, uint32_t),
+	DEFINE_PROP_ARRAY("pulldown-pins", pmb887x_gpio_t, pulldown_pins_count, pulldown_pins, qdev_prop_uint32, uint32_t),
 };
 
 static void gpio_class_init(ObjectClass *klass, const void *data) {

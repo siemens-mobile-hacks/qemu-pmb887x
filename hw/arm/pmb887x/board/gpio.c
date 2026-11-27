@@ -9,7 +9,9 @@
 #include "hw/core/irq.h"
 #include "hw/core/split-irq.h"
 #include "hw/core/qdev.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/error-report.h"
+#include "qobject/qlist.h"
 
 typedef struct pmb887x_qdev_search_result_t pmb887x_qdev_search_result_t;
 
@@ -107,6 +109,28 @@ void pmb887x_gpio_connect_output(const char *output_spec, qemu_irq gpio_in) {
 
 void pmb887x_gpio_connect(const char *output_spec, const char *input_spec) {
 	pmb887x_gpio_connect_output(output_spec, pmb887x_gpio_get_input(input_spec));
+}
+
+void pmb887x_board_gpio_init_pull_resistors(DeviceState *gpio) {
+	toml_datum_t table = toml_table_get(pmb887x_board()->config, TOML_TABLE, "gpio.pull-resistors", false);
+	if (table.type == TOML_UNKNOWN)
+		return;
+
+	QList *pullup_pins = qlist_new();
+	QList *pulldown_pins = qlist_new();
+	for (size_t i = 0; i < table.u.tab.size; i++) {
+		const char *name = table.u.tab.key[i];
+		int pin = find_gpio_pin(name);
+		if (pin < 0)
+			hw_error("GPIO pin '%s' not found", name);
+
+		uint32_t level = toml_table_get_uint32(table, name, 0, true);
+		if (level > 1)
+			toml_fail(table.u.tab.value[i], "pull resistor level of '%s' must be 0 or 1", name);
+		qlist_append_int(level ? pullup_pins : pulldown_pins, pin);
+	}
+	qdev_prop_set_array(gpio, "pullup-pins", pullup_pins);
+	qdev_prop_set_array(gpio, "pulldown-pins", pulldown_pins);
 }
 
 void pmb887x_board_gpio_init_fixed_inputs(void) {

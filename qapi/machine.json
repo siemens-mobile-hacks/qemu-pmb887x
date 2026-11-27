@@ -806,6 +806,10 @@
 # @cpu-index: the index of the virtual CPU to use for translating the
 #     virtual address (defaults to CPU 0)
 #
+# @ignore-errors: save pages with read errors as zeros and report each
+#     such range as a warning instead of failing (default false)
+#     (since 11.2)
+#
 # Since: 0.14
 #
 # .. caution:: Errors were not reliably returned until 1.1.
@@ -823,7 +827,8 @@
      'val': 'uint64',
      'size': 'size',
      'filename': 'str',
-     '*cpu-index': 'int' } }
+     '*cpu-index': 'int',
+     '*ignore-errors': 'bool' } }
 
 ##
 # @pmemsave:

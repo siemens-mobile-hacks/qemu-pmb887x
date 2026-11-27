@@ -3,6 +3,7 @@
 
 void pmb887x_board_gpio_init(void);
 void pmb887x_board_gpio_init_fixed_inputs(void);
+void pmb887x_board_gpio_init_pull_resistors(DeviceState *gpio);
 
 void pmb887x_gpio_connect(const char *output_spec, const char *input_spec);
 void pmb887x_gpio_connect_output(const char *output_spec, qemu_irq gpio_in);

@@ -50,6 +50,7 @@ struct pmb887x_cgu_t {
 	Clock *ms_clock;
 	Clock *dma_clock;
 	Clock *mmci_clock;
+	Clock *clk48m_clock;
 	Clock *ahb_per_clock;
 	Clock *cpu_clock;
 	Clock *ebu_clock;
@@ -220,6 +221,24 @@ static uint32_t cgu_get_mmci_freq(pmb887x_cgu_t *p) {
 	return frequency >> divider;
 }
 
+static uint32_t cgu_get_clk48m_freq(pmb887x_cgu_t *p) {
+	uint32_t frequency;
+
+	switch (p->con2 & CGU_CON2_CLK48M_CLKSEL) {
+		case CGU_CON2_CLK48M_CLKSEL_OSC:
+			frequency = p->xtal;
+			break;
+		case CGU_CON2_CLK48M_CLKSEL_PHASE4:
+			frequency = cgu_get_phase_freq(p, 4);
+			break;
+		default:
+			return 0;
+	}
+
+	uint32_t divider = (p->con3 & CGU_CON3_CLK48M_CLKDIV) >> CGU_CON3_CLK48M_CLKDIV_SHIFT;
+	return frequency >> divider;
+}
+
 static uint32_t cgu_get_ahb_per_freq(pmb887x_cgu_t *p) {
 	uint32_t divider = (p->con3 & CGU_CON3_AHB_PER_CLKDIV) >> CGU_CON3_AHB_PER_CLKDIV_SHIFT;
 
@@ -345,6 +364,7 @@ static void cgu_update_state(struct pmb887x_cgu_t *p) {
 	clock_update_hz(p->ms_clock, cgu_get_ms_freq(p));
 	clock_update_hz(p->dma_clock, cgu_get_dma_freq(p));
 	clock_update_hz(p->mmci_clock, cgu_get_mmci_freq(p));
+	clock_update_hz(p->clk48m_clock, cgu_get_clk48m_freq(p));
 	clock_update_hz(p->ahb_per_clock, cgu_get_ahb_per_freq(p));
 	clock_update_hz(p->cpu_clock, new_fcpu);
 	clock_update_hz(p->ebu_clock, cgu_get_ebu_freq(p));
@@ -467,6 +487,7 @@ static void cgu_init(Object *obj) {
 	p->ms_clock = qdev_init_clock_out(dev, "MS");
 	p->dma_clock = qdev_init_clock_out(dev, "DMA");
 	p->mmci_clock = qdev_init_clock_out(dev, "MMCI");
+	p->clk48m_clock = qdev_init_clock_out(dev, "CLK48M");
 	p->ahb_per_clock = qdev_init_clock_out(dev, "AHB_PER");
 	p->cpu_clock = qdev_init_clock_out(dev, "CPU");
 	p->ebu_clock = qdev_init_clock_out(dev, "EBU");

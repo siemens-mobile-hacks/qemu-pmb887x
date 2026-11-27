@@ -393,7 +393,8 @@
 #define PMB8876_CIF_UNK0_IRQ		138
 #define PMB8876_CIF_UNK1_IRQ		139
 #define PMB8876_CIF_UNK2_IRQ		140
-#define PMB8876_MCI_IRQ				148
+#define PMB8876_MCI_INTR0_IRQ		148
+#define PMB8876_MCI_INTR1_IRQ		149
 #define PMB8876_I2C_SINGLE_REQ_IRQ	155
 #define PMB8876_I2C_BURST_REQ_IRQ	156
 #define PMB8876_I2C_ERROR_IRQ		157
@@ -1448,8 +1449,8 @@
 
 /* Response command register */
 #define MCI_RESPCMD							0x10
-#define MCI_RESPCMD_CMDINDEX				(0x3F << 0)			 // Command index from the last received response
-#define MCI_RESPCMD_CMDINDEX_SHIFT			0
+#define MCI_RESPCMD_RESPCMD					(0x3F << 0)			 // Command index from the last received response
+#define MCI_RESPCMD_RESPCMD_SHIFT			0
 
 /* Card status bits [31:0] for a short response or [127:96] for a long response */
 #define MCI_RESPONSE0						0x14
@@ -1473,13 +1474,13 @@
 
 /* Data timeout register */
 #define MCI_DATATIMER						0x24
-#define MCI_DATATIMER_TIMER					(0xFFFFFFFFU << 0)	 // Data timeout in card bus clock periods
-#define MCI_DATATIMER_TIMER_SHIFT			0
+#define MCI_DATATIMER_DATATIME				(0xFFFFFFFFU << 0)	 // Data timeout in card bus clock periods
+#define MCI_DATATIMER_DATATIME_SHIFT		0
 
 /* Data length register */
 #define MCI_DATALENGTH						0x28
-#define MCI_DATALENGTH_LENGTH				(0xFFFF << 0)		 // Number of data bytes to transfer
-#define MCI_DATALENGTH_LENGTH_SHIFT			0
+#define MCI_DATALENGTH_DATALENGTH			(0xFFFF << 0)		 // Number of data bytes to transfer
+#define MCI_DATALENGTH_DATALENGTH_SHIFT		0
 
 /* Data path state machine control register */
 #define MCI_DATACTRL						0x2C
@@ -1500,8 +1501,8 @@
 
 /* Remaining data counter register */
 #define MCI_DATACNT							0x30
-#define MCI_DATACNT_COUNT					(0xFFFF << 0)		 // Number of data bytes remaining
-#define MCI_DATACNT_COUNT_SHIFT				0
+#define MCI_DATACNT_DATACOUNT				(0xFFFF << 0)		 // Number of data bytes remaining
+#define MCI_DATACNT_DATACOUNT_SHIFT			0
 
 /* Status register */
 #define MCI_STATUS							0x34
@@ -1676,8 +1677,8 @@
 
 /* FIFO counter register */
 #define MCI_FIFOCNT							0x48
-#define MCI_FIFOCNT_COUNT					(0x7FFF << 0)		 // Number of FIFO words remaining
-#define MCI_FIFOCNT_COUNT_SHIFT				0
+#define MCI_FIFOCNT_DATACOUNT				(0x7FFF << 0)		 // Number of FIFO words remaining
+#define MCI_FIFOCNT_DATACOUNT_SHIFT			0
 
 /* Data FIFO register */
 #define MCI_FIFO0							0x80
@@ -2364,7 +2365,7 @@
 #define CGU_STAT_LOCK						(1 << 13)		 // PLL lock status
 #define CGU_STAT_LOCK_SHIFT					13
 
-/* Clock Generation Unit Control Register 6 (CGU_CTL6) */
+/* Clock Generation Unit Control Register 6 (CGU_CTL6); absent on PMB8870 and PMB8875 */
 #define CGU_CON3							0xB4
 #define CGU_CON3_AHB_PER_CLKSEL				(0x3 << 0)		 // Source clock for AHB_PER
 #define CGU_CON3_AHB_PER_CLKSEL_SHIFT		0
@@ -3755,306 +3756,398 @@
 // EBU [MOD_NUM=0014, MOD_REV=04, MOD_32BIT=C0]
 // EBU [MOD_NUM=0014, MOD_REV=05, MOD_32BIT=C0]
 // External Bus Unit (see EBU in XMC4500)
-#define EBU_IO_SIZE							0x00100000
+#define EBU_IO_SIZE								0x00100000
 /* Clock Control Register */
-#define EBU_CLC								0x00
+#define EBU_CLC									0x00
 
 /* Module Identifier Register */
-#define EBU_ID								0x08
+#define EBU_ID									0x08
 
-#define EBU_CON								0x10
-#define EBU_CON_EXTRECON					(1 << 1)			 // External reconfiguration
-#define EBU_CON_EXTRECON_SHIFT				1
-#define EBU_CON_EXTSVM						(1 << 2)			 // Perform master in
-#define EBU_CON_EXTSVM_SHIFT				2
-#define EBU_CON_EXTACC						(1 << 3)			 // External access FPI-bus
-#define EBU_CON_EXTACC_SHIFT				3
-#define EBU_CON_EXTLOCK						(1 << 4)			 // Lock external bus
-#define EBU_CON_EXTLOCK_SHIFT				4
-#define EBU_CON_ARBSYNC						(1 << 5)			 // Arbitration evaluation
-#define EBU_CON_ARBSYNC_SHIFT				5
-#define EBU_CON_ARBMODE						(0x3 << 6)			 // Arbitration mode
-#define EBU_CON_ARBMODE_SHIFT				6
-#define EBU_CON_TOUTC						(0xFF << 8)			 // Time-out control
-#define EBU_CON_TOUTC_SHIFT					8
-#define EBU_CON_GLOBALCS					(0xFF << 16)		 // Global chip select signal
-#define EBU_CON_GLOBALCS_SHIFT				16
-#define EBU_CON_BUSCLK						(0x3 << 24)			 // Clock generation
-#define EBU_CON_BUSCLK_SHIFT				24
-#define EBU_CON_SDCMSEL						(1 << 26)			 // SDRAM Clock Mode Select
-#define EBU_CON_SDCMSEL_SHIFT				26
-#define EBU_CON_CS0FAM						(1 << 27)			 // CS0 Fills Address Map
-#define EBU_CON_CS0FAM_SHIFT				27
-#define EBU_CON_EMUFAM						(1 << 28)			 // CSEMU Fills Address Map
-#define EBU_CON_EMUFAM_SHIFT				28
-#define EBU_CON_BFSSS						(1 << 29)			 // Burst FLASH Single Stage Synchronization
-#define EBU_CON_BFSSS_SHIFT					29
+/* EBU Configuration Register */
+#define EBU_CON									0x10
+#define EBU_CON_EXTRECON						(1 << 1)			 // External master can reconfigure EXTCON
+#define EBU_CON_EXTRECON_SHIFT					1
+#define EBU_CON_EXTSVM							(1 << 2)			 // External accesses to the FPI bus in supervisor mode
+#define EBU_CON_EXTSVM_SHIFT					2
+#define EBU_CON_EXTACC							(1 << 3)			 // External device access to the FPI bus
+#define EBU_CON_EXTACC_SHIFT					3
+#define EBU_CON_EXTLOCK							(1 << 4)			 // Lock the external bus after gaining ownership
+#define EBU_CON_EXTLOCK_SHIFT					4
+#define EBU_CON_ARBSYNC							(1 << 5)			 // Arbitration inputs are asynchronous
+#define EBU_CON_ARBSYNC_SHIFT					5
+#define EBU_CON_ARBMODE							(0x3 << 6)			 // Arbitration mode
+#define EBU_CON_ARBMODE_SHIFT					6
+#define EBU_CON_ARBMODE_DISABLED				0x0
+#define EBU_CON_ARBMODE_EXTERNAL_MASTER			0x40
+#define EBU_CON_ARBMODE_EXTERNAL_SLAVE			0x80
+#define EBU_CON_ARBMODE_SOLE_MASTER				0xC0
+#define EBU_CON_TOUTC							(0xFF << 8)			 // Bus time-out in units of 8 clock cycles, 0 disables it
+#define EBU_CON_TOUTC_SHIFT						8
+#define EBU_CON_GLOBALCS						(0xFF << 16)		 // Chip selects that also assert CSglb
+#define EBU_CON_GLOBALCS_SHIFT					16
+#define EBU_CON_BUSCLK							(0x3 << 24)			 // EBU clock divider from the LMB clock
+#define EBU_CON_BUSCLK_SHIFT					24
+#define EBU_CON_BUSCLK_LMB						0x0
+#define EBU_CON_BUSCLK_LMB_DIV2					0x1000000
+#define EBU_CON_BUSCLK_LMB_DIV4					0x2000000
+#define EBU_CON_SDCMSEL							(1 << 26)			 // SDRAM Clock Mode Select
+#define EBU_CON_SDCMSEL_SHIFT					26
+#define EBU_CON_CS0FAM							(1 << 27)			 // CS0 Fills Address Map
+#define EBU_CON_CS0FAM_SHIFT					27
+#define EBU_CON_EMUFAM							(1 << 28)			 // CSEMU Fills Address Map
+#define EBU_CON_EMUFAM_SHIFT					28
+#define EBU_CON_BFSSS							(1 << 29)			 // Burst FLASH Single Stage Synchronization
+#define EBU_CON_BFSSS_SHIFT						29
 
-#define EBU_BFCON							0x20
-#define EBU_BFCON_FETBLEN0					(0xF << 0)			 // Fetch Burst Length for Burst FLASH Type 0
-#define EBU_BFCON_FETBLEN0_SHIFT			0
-#define EBU_BFCON_FBBMSEL0					(1 << 4)			 // FLASH Burst Buffer Mode Select for Burst FLASH Type 0
-#define EBU_BFCON_FBBMSEL0_SHIFT			4
-#define EBU_BFCON_WAITFUNC0					(1 << 5)			 // Function of WAIT Input for Burst FLASH Type 0
-#define EBU_BFCON_WAITFUNC0_SHIFT			5
-#define EBU_BFCON_EXTCLOCK					(0x3 << 6)			 // Frequency of external clock
-#define EBU_BFCON_EXTCLOCK_SHIFT			6
-#define EBU_BFCON_BFCMSEL					(1 << 8)			 // Burst FLASH Clock Mode Select
-#define EBU_BFCON_BFCMSEL_SHIFT				8
-#define EBU_BFCON_EBSE0						(1 << 9)			 // Early Burst Signal Enable for Burst FLASH Type 0
-#define EBU_BFCON_EBSE0_SHIFT				9
-#define EBU_BFCON_DBA0						(1 << 10)			 // Disable Burst Address Wrapping
-#define EBU_BFCON_DBA0_SHIFT				10
-#define EBU_BFCON_FDBKEN					(1 << 11)			 // Burst FLASH Clock Feedback Enable
-#define EBU_BFCON_FDBKEN_SHIFT				11
-#define EBU_BFCON_DTALTNCY					(0xF << 12)			 // Latency Cycle Control
-#define EBU_BFCON_DTALTNCY_SHIFT			12
-#define EBU_BFCON_FETBLEN1					(0xF << 16)			 // Fetch Burst Length for Burst FLASH Type 1
-#define EBU_BFCON_FETBLEN1_SHIFT			16
-#define EBU_BFCON_FBBMSEL1					(1 << 20)			 // FLASH Burst Buffer Mode Select for Burst FLASH Type 1
-#define EBU_BFCON_FBBMSEL1_SHIFT			20
-#define EBU_BFCON_WAITFUNC1					(1 << 21)			 // Function of WAIT Input for Burst FLASH Type 1
-#define EBU_BFCON_WAITFUNC1_SHIFT			21
-#define EBU_BFCON_EBSE1						(1 << 25)			 // Early Burst Signal Enable for Burst FLASH Type 1
-#define EBU_BFCON_EBSE1_SHIFT				25
-#define EBU_BFCON_DBA1						(1 << 26)			 // Disable Burst Address Wrapping for Burst FLASH Type 1
-#define EBU_BFCON_DBA1_SHIFT				26
+/* EBU Burst Flash Control Register */
+#define EBU_BFCON								0x20
+#define EBU_BFCON_FETBLEN0						(0xF << 0)			 // Fetch Burst Length for Burst FLASH Type 0
+#define EBU_BFCON_FETBLEN0_SHIFT				0
+#define EBU_BFCON_FETBLEN0_1					0x0
+#define EBU_BFCON_FETBLEN0_2					0x1
+#define EBU_BFCON_FETBLEN0_4					0x2
+#define EBU_BFCON_FETBLEN0_8					0x3
+#define EBU_BFCON_FBBMSEL0						(1 << 4)			 // FLASH Burst Buffer Mode Select for Burst FLASH Type 0
+#define EBU_BFCON_FBBMSEL0_SHIFT				4
+#define EBU_BFCON_WAITFUNC0						(1 << 5)			 // Function of WAIT Input for Burst FLASH Type 0
+#define EBU_BFCON_WAITFUNC0_SHIFT				5
+#define EBU_BFCON_EXTCLOCK						(0x3 << 6)			 // Frequency of external clock
+#define EBU_BFCON_EXTCLOCK_SHIFT				6
+#define EBU_BFCON_EXTCLOCK_LMB					0x0
+#define EBU_BFCON_EXTCLOCK_LMB_DIV2				0x40
+#define EBU_BFCON_EXTCLOCK_LMB_DIV3				0x80
+#define EBU_BFCON_EXTCLOCK_LMB_DIV4				0xC0
+#define EBU_BFCON_BFCMSEL						(1 << 8)			 // Burst FLASH Clock Mode Select
+#define EBU_BFCON_BFCMSEL_SHIFT					8
+#define EBU_BFCON_EBSE0							(1 << 9)			 // Early Burst Signal Enable for Burst FLASH Type 0
+#define EBU_BFCON_EBSE0_SHIFT					9
+#define EBU_BFCON_DBA0							(1 << 10)			 // Disable Burst Address Wrapping
+#define EBU_BFCON_DBA0_SHIFT					10
+#define EBU_BFCON_FDBKEN						(1 << 11)			 // Burst FLASH Clock Feedback Enable
+#define EBU_BFCON_FDBKEN_SHIFT					11
+#define EBU_BFCON_DTALTNCY						(0xF << 12)			 // Read latency with clock feedback, 2 * (EXTCLOCK + 1)
+#define EBU_BFCON_DTALTNCY_SHIFT				12
+#define EBU_BFCON_FETBLEN1						(0xF << 16)			 // Fetch Burst Length for Burst FLASH Type 1
+#define EBU_BFCON_FETBLEN1_SHIFT				16
+#define EBU_BFCON_FETBLEN1_1					0x0
+#define EBU_BFCON_FETBLEN1_2					0x10000
+#define EBU_BFCON_FETBLEN1_4					0x20000
+#define EBU_BFCON_FETBLEN1_8					0x30000
+#define EBU_BFCON_FBBMSEL1						(1 << 20)			 // FLASH Burst Buffer Mode Select for Burst FLASH Type 1
+#define EBU_BFCON_FBBMSEL1_SHIFT				20
+#define EBU_BFCON_WAITFUNC1						(1 << 21)			 // Function of WAIT Input for Burst FLASH Type 1
+#define EBU_BFCON_WAITFUNC1_SHIFT				21
+#define EBU_BFCON_EBSE1							(1 << 25)			 // Early Burst Signal Enable for Burst FLASH Type 1
+#define EBU_BFCON_EBSE1_SHIFT					25
+#define EBU_BFCON_DBA1							(1 << 26)			 // Disable Burst Address Wrapping for Burst FLASH Type 1
+#define EBU_BFCON_DBA1_SHIFT					26
 
-#define EBU_SDRMREF0						0x40
-#define EBU_SDRMREF1						0x48
-#define EBU_SDRMREF_REFRESHC				(0x3F << 0)			 // Refresh counter period
-#define EBU_SDRMREF_REFRESHC_SHIFT			0
-#define EBU_SDRMREF_REFRESHR				(0x7 << 6)			 // Number of refresh commands
-#define EBU_SDRMREF_REFRESHR_SHIFT			6
-#define EBU_SDRMREF_SELFREXST				(1 << 9)			 // Self refresh exit status
-#define EBU_SDRMREF_SELFREXST_SHIFT			9
-#define EBU_SDRMREF_SELFREX					(1 << 10)			 // Self refresh exit
-#define EBU_SDRMREF_SELFREX_SHIFT			10
-#define EBU_SDRMREF_SELFRENST				(1 << 11)			 // Self refresh entry status
-#define EBU_SDRMREF_SELFRENST_SHIFT			11
-#define EBU_SDRMREF_SELFREN					(1 << 12)			 // Self refresh entry
-#define EBU_SDRMREF_SELFREN_SHIFT			12
-#define EBU_SDRMREF_AUTOSELFR				(1 << 13)			 // Automatic self refresh
-#define EBU_SDRMREF_AUTOSELFR_SHIFT			13
+/* EBU SDRAM Refresh Register */
+#define EBU_SDRMREF0							0x40
+#define EBU_SDRMREF1							0x48
+#define EBU_SDRMREF_REFRESHC					(0x3F << 0)			 // Refresh period in units of 64 clock cycles, 0 disables refresh
+#define EBU_SDRMREF_REFRESHC_SHIFT				0
+#define EBU_SDRMREF_REFRESHR					(0x7 << 6)			 // Additional refresh commands per refresh
+#define EBU_SDRMREF_REFRESHR_SHIFT				6
+#define EBU_SDRMREF_SELFREXST					(1 << 9)			 // Self refresh exit command was issued
+#define EBU_SDRMREF_SELFREXST_SHIFT				9
+#define EBU_SDRMREF_SELFREX						(1 << 10)			 // Issue the self refresh exit command
+#define EBU_SDRMREF_SELFREX_SHIFT				10
+#define EBU_SDRMREF_SELFRENST					(1 << 11)			 // Self refresh entry command was issued
+#define EBU_SDRMREF_SELFRENST_SHIFT				11
+#define EBU_SDRMREF_SELFREN						(1 << 12)			 // Issue the self refresh entry command
+#define EBU_SDRMREF_SELFREN_SHIFT				12
+#define EBU_SDRMREF_AUTOSELFR					(1 << 13)			 // Self refresh while the EBU gives up the external bus
+#define EBU_SDRMREF_AUTOSELFR_SHIFT				13
 
-#define EBU_SDRMCON0						0x50
-#define EBU_SDRMCON1						0x58
-#define EBU_SDRMCON_CRAS					(0xF << 0)			 // Row to precharge delay counter
-#define EBU_SDRMCON_CRAS_SHIFT				0
-#define EBU_SDRMCON_CRFSH					(0xF << 4)			 // Refresh commands counter
-#define EBU_SDRMCON_CRFSH_SHIFT				4
-#define EBU_SDRMCON_CRSC					(0x3 << 8)			 // Mode register setup time
-#define EBU_SDRMCON_CRSC_SHIFT				8
-#define EBU_SDRMCON_CRP						(0x3 << 10)			 // Row precharge time counter
-#define EBU_SDRMCON_CRP_SHIFT				10
-#define EBU_SDRMCON_AWIDTH					(0x3 << 12)			 // Width of column address
-#define EBU_SDRMCON_AWIDTH_SHIFT			12
-#define EBU_SDRMCON_CRCD					(0x3 << 14)			 // Row to column delay counter
-#define EBU_SDRMCON_CRCD_SHIFT				14
-#define EBU_SDRMCON_CRC						(0x7 << 16)			 // Row cycle time counter
-#define EBU_SDRMCON_CRC_SHIFT				16
-#define EBU_SDRMCON_PAGEM					(0x7 << 19)			 // Mask for page tag
-#define EBU_SDRMCON_PAGEM_SHIFT				19
-#define EBU_SDRMCON_BANKM					(0x7 << 22)			 // Mask for bank tag
-#define EBU_SDRMCON_BANKM_SHIFT				22
-#define EBU_SDRMCON_CRCE					(1 << 25)			 // Row cycle time counter extension
-#define EBU_SDRMCON_CRCE_SHIFT				25
+/* EBU SDRAM Control Register */
+#define EBU_SDRMCON0							0x50
+#define EBU_SDRMCON1							0x58
+#define EBU_SDRMCON_CRAS						(0xF << 0)			 // Clock cycles from row activate to precharge
+#define EBU_SDRMCON_CRAS_SHIFT					0
+#define EBU_SDRMCON_CRFSH						(0xF << 4)			 // Refresh commands during power-up initialization
+#define EBU_SDRMCON_CRFSH_SHIFT					4
+#define EBU_SDRMCON_CRSC						(0x3 << 8)			 // NOP cycles after a mode register set command
+#define EBU_SDRMCON_CRSC_SHIFT					8
+#define EBU_SDRMCON_CRP							(0x3 << 10)			 // NOP cycles after a precharge command
+#define EBU_SDRMCON_CRP_SHIFT					10
+#define EBU_SDRMCON_AWIDTH						(0x3 << 12)			 // Column address width, depends on the port width
+#define EBU_SDRMCON_AWIDTH_SHIFT				12
+#define EBU_SDRMCON_CRCD						(0x3 << 14)			 // NOP cycles between row and column address
+#define EBU_SDRMCON_CRCD_SHIFT					14
+#define EBU_SDRMCON_CRC							(0x7 << 16)			 // NOP cycles between refresh commands during power-up initialization
+#define EBU_SDRMCON_CRC_SHIFT					16
+#define EBU_SDRMCON_PAGEM						(0x7 << 19)			 // Mask for page tag
+#define EBU_SDRMCON_PAGEM_SHIFT					19
+#define EBU_SDRMCON_PAGEM_ALWAYS_MISS			0x0
+#define EBU_SDRMCON_PAGEM_BITS_26_9				0x80000
+#define EBU_SDRMCON_PAGEM_BITS_26_10			0x100000
+#define EBU_SDRMCON_PAGEM_BITS_26_11			0x180000
+#define EBU_SDRMCON_PAGEM_BITS_26_12			0x200000
+#define EBU_SDRMCON_PAGEM_BITS_26_13			0x280000
+#define EBU_SDRMCON_BANKM						(0x7 << 22)			 // Mask for bank tag
+#define EBU_SDRMCON_BANKM_SHIFT					22
+#define EBU_SDRMCON_BANKM_ALWAYS_MISS			0x0
+#define EBU_SDRMCON_BANKM_BITS_26_20			0x400000
+#define EBU_SDRMCON_BANKM_BITS_26_21			0x800000
+#define EBU_SDRMCON_BANKM_BITS_26_22			0xC00000
+#define EBU_SDRMCON_BANKM_BITS_26_23			0x1000000
+#define EBU_SDRMCON_BANKM_BITS_26_24			0x1400000
+#define EBU_SDRMCON_BANKM_BITS_26_25			0x1800000
+#define EBU_SDRMCON_BANKM_BIT_26				0x1C00000
+#define EBU_SDRMCON_CRCE						(1 << 25)			 // Row cycle time counter extension
+#define EBU_SDRMCON_CRCE_SHIFT					25
 
-#define EBU_SDRMOD0							0x60
-#define EBU_SDRMOD1							0x68
-#define EBU_SDRMOD_BURSTL					(0x7 << 0)			 // Burst length
-#define EBU_SDRMOD_BURSTL_SHIFT				0
-#define EBU_SDRMOD_BTYP						(1 << 3)			 // Burst type
-#define EBU_SDRMOD_BTYP_SHIFT				3
-#define EBU_SDRMOD_CASLAT					(0x7 << 4)			 // CAS latency
-#define EBU_SDRMOD_CASLAT_SHIFT				4
-#define EBU_SDRMOD_OPMODE					(0x7F << 7)			 // Operation Mode
-#define EBU_SDRMOD_OPMODE_SHIFT				7
+/* EBU SDRAM Mode Register */
+#define EBU_SDRMOD0								0x60
+#define EBU_SDRMOD1								0x68
+#define EBU_SDRMOD_BURSTL						(0x7 << 0)			 // Locations accessed by a single command
+#define EBU_SDRMOD_BURSTL_SHIFT					0
+#define EBU_SDRMOD_BURSTL_1						0x0
+#define EBU_SDRMOD_BURSTL_8						0x3
+#define EBU_SDRMOD_BTYP							(1 << 3)			 // Burst type
+#define EBU_SDRMOD_BTYP_SHIFT					3
+#define EBU_SDRMOD_CASLAT						(0x7 << 4)			 // Clocks from a READ command to valid data
+#define EBU_SDRMOD_CASLAT_SHIFT					4
+#define EBU_SDRMOD_CASLAT_1						0x10
+#define EBU_SDRMOD_CASLAT_2						0x20
+#define EBU_SDRMOD_CASLAT_3						0x30
+#define EBU_SDRMOD_OPMODE						(0x7F << 7)			 // Operation mode
+#define EBU_SDRMOD_OPMODE_SHIFT					7
 
-#define EBU_SDRSTAT0						0x70
-#define EBU_SDRSTAT1						0x78
-#define EBU_SDRSTAT_REFERR					(1 << 0)			 // SDRAM Refresh Error
-#define EBU_SDRSTAT_REFERR_SHIFT			0
-#define EBU_SDRSTAT_SDRM_BUSY				(1 << 1)			 // SDRAM Busy
-#define EBU_SDRSTAT_SDRM_BUSY_SHIFT			1
-#define EBU_SDRSTAT_UNK8					(1 << 8)			 // Undocumented status bit, reads as one
-#define EBU_SDRSTAT_UNK8_SHIFT				8
+/* EBU SDRAM Status Register */
+#define EBU_SDRSTAT0							0x70
+#define EBU_SDRSTAT1							0x78
+#define EBU_SDRSTAT_REFERR						(1 << 0)			 // Refresh request collided with a pending refresh
+#define EBU_SDRSTAT_REFERR_SHIFT				0
+#define EBU_SDRSTAT_SDRM_BUSY					(1 << 1)			 // Power-up initialization sequence is running
+#define EBU_SDRSTAT_SDRM_BUSY_SHIFT				1
+#define EBU_SDRSTAT_UNK8						(1 << 8)			 // Undocumented status bit, reads as one
+#define EBU_SDRSTAT_UNK8_SHIFT					8
 
-#define EBU_ADDRSEL0						0x80
-#define EBU_ADDRSEL1						0x88
-#define EBU_ADDRSEL2						0x90
-#define EBU_ADDRSEL3						0x98
-#define EBU_ADDRSEL4						0xA0
-#define EBU_ADDRSEL5						0xA8
-#define EBU_ADDRSEL6						0xB0
-#define EBU_ADDRSEL_REGENAB					(1 << 0)			 // Memory Region
-#define EBU_ADDRSEL_REGENAB_SHIFT			0
-#define EBU_ADDRSEL_ALTENAB					(1 << 1)			 // Alternate Segment Comparison
-#define EBU_ADDRSEL_ALTENAB_SHIFT			1
-#define EBU_ADDRSEL_MASK					(0xF << 4)			 // Address Mask
-#define EBU_ADDRSEL_MASK_SHIFT				4
-#define EBU_ADDRSEL_ALTSEG					(0xF << 8)			 // Alternate Segment
-#define EBU_ADDRSEL_ALTSEG_SHIFT			8
-#define EBU_ADDRSEL_BASE					(0xFFFFFU << 12)	 // Base Address
-#define EBU_ADDRSEL_BASE_SHIFT				12
+/* EBU Address Select Register */
+#define EBU_ADDRSEL0							0x80
+#define EBU_ADDRSEL1							0x88
+#define EBU_ADDRSEL2							0x90
+#define EBU_ADDRSEL3							0x98
+#define EBU_ADDRSEL4							0xA0
+#define EBU_ADDRSEL5							0xA8
+#define EBU_ADDRSEL6							0xB0
+#define EBU_ADDRSEL_REGENAB						(1 << 0)			 // Memory region enable
+#define EBU_ADDRSEL_REGENAB_SHIFT				0
+#define EBU_ADDRSEL_ALTENAB						(1 << 1)			 // Compare the alternate segment
+#define EBU_ADDRSEL_ALTENAB_SHIFT				1
+#define EBU_ADDRSEL_MASK						(0xF << 4)			 // Number of base address bits from bit 26 included in the comparison
+#define EBU_ADDRSEL_MASK_SHIFT					4
+#define EBU_ADDRSEL_ALTSEG						(0xF << 8)			 // Alternate segment compared with address bits 31-28
+#define EBU_ADDRSEL_ALTSEG_SHIFT				8
+#define EBU_ADDRSEL_BASE						(0xFFFFFU << 12)	 // Memory region base address
+#define EBU_ADDRSEL_BASE_SHIFT					12
 
-#define EBU_BUSCON0							0xC0
-#define EBU_BUSCON1							0xC8
-#define EBU_BUSCON2							0xD0
-#define EBU_BUSCON3							0xD8
-#define EBU_BUSCON4							0xE0
-#define EBU_BUSCON5							0xE8
-#define EBU_BUSCON6							0xF0
-#define EBU_BUSCON_MULTMAP					(0x7F << 0)			 // Multiplier map
-#define EBU_BUSCON_MULTMAP_SHIFT			0
-#define EBU_BUSCON_UNK7						(1 << 7)			 // Undocumented writable field
-#define EBU_BUSCON_UNK7_SHIFT				7
-#define EBU_BUSCON_WPRE						(1 << 8)			 // Weak prefetch
-#define EBU_BUSCON_WPRE_SHIFT				8
-#define EBU_BUSCON_AALIGN					(1 << 9)			 // Address alignment
-#define EBU_BUSCON_AALIGN_SHIFT				9
-#define EBU_BUSCON_CTYPE					(0x3 << 10)			 // Cycle Type
-#define EBU_BUSCON_CTYPE_SHIFT				10
-#define EBU_BUSCON_CMULT					(0x7 << 13)			 // Cycle multiplier
-#define EBU_BUSCON_CMULT_SHIFT				13
-#define EBU_BUSCON_ENDIAN					(1 << 16)			 // Endian mode
-#define EBU_BUSCON_ENDIAN_SHIFT				16
-#define EBU_BUSCON_DLOAD					(1 << 17)			 // Data upload
-#define EBU_BUSCON_DLOAD_SHIFT				17
-#define EBU_BUSCON_PRE						(1 << 18)			 // Prefetch mechanism
-#define EBU_BUSCON_PRE_SHIFT				18
-#define EBU_BUSCON_WAITINV					(1 << 19)			 // Reversed polarity at WAIT
-#define EBU_BUSCON_WAITINV_SHIFT			19
-#define EBU_BUSCON_BCGEN					(0x3 << 20)			 // Signal timing mode
-#define EBU_BUSCON_BCGEN_SHIFT				20
-#define EBU_BUSCON_PORTW					(0x3 << 22)			 // Port width
-#define EBU_BUSCON_PORTW_SHIFT				22
-#define EBU_BUSCON_WAIT						(0x3 << 24)			 // External wait state
-#define EBU_BUSCON_WAIT_SHIFT				24
-#define EBU_BUSCON_XCMDDELAY				(0x3 << 26)			 // External command delay
-#define EBU_BUSCON_XCMDDELAY_SHIFT			26
-#define EBU_BUSCON_AGEN						(0x7 << 28)			 // Address generation
-#define EBU_BUSCON_AGEN_SHIFT				28
-#define EBU_BUSCON_AGEN_ASYNC_DEMULTIPLEXED	0x0
-#define EBU_BUSCON_AGEN_ASYNC_MULTIPLEXED	0x10000000
-#define EBU_BUSCON_AGEN_BURST_FLASH_0		0x20000000
-#define EBU_BUSCON_AGEN_SDRAM_0				0x30000000
-#define EBU_BUSCON_AGEN_SDRAM_1				0x40000000
-#define EBU_BUSCON_AGEN_BURST_FLASH_1		0x50000000
-#define EBU_BUSCON_WRITE					(1U << 31)			 // Write protection
-#define EBU_BUSCON_WRITE_SHIFT				31
+/* EBU Bus Configuration Register */
+#define EBU_BUSCON0								0xC0
+#define EBU_BUSCON1								0xC8
+#define EBU_BUSCON2								0xD0
+#define EBU_BUSCON3								0xD8
+#define EBU_BUSCON4								0xE0
+#define EBU_BUSCON5								0xE8
+#define EBU_BUSCON6								0xF0
+#define EBU_BUSCON_MULTMAP						(0x7F << 0)			 // Delay cycle fields that use the CMULT multiplier
+#define EBU_BUSCON_MULTMAP_SHIFT				0
+#define EBU_BUSCON_UNK7							(1 << 7)			 // Undocumented writable field
+#define EBU_BUSCON_UNK7_SHIFT					7
+#define EBU_BUSCON_WPRE							(1 << 8)			 // A data access can abort a running prefetch
+#define EBU_BUSCON_WPRE_SHIFT					8
+#define EBU_BUSCON_AALIGN						(1 << 9)			 // Align the address to the port width
+#define EBU_BUSCON_AALIGN_SHIFT					9
+#define EBU_BUSCON_CTYPE						(0x3 << 10)			 // Address and data bus multiplexing for burst flash
+#define EBU_BUSCON_CTYPE_SHIFT					10
+#define EBU_BUSCON_CTYPE_NON_MULTIPLEXED		0x0
+#define EBU_BUSCON_CTYPE_MULTIPLEXED			0x400
+#define EBU_BUSCON_CTYPE_TWIN_16BIT_MULTIPLEXED	0x800
+#define EBU_BUSCON_CMULT						(0x7 << 13)			 // Multiplier for the delay cycles selected by MULTMAP
+#define EBU_BUSCON_CMULT_SHIFT					13
+#define EBU_BUSCON_CMULT_1						0x0
+#define EBU_BUSCON_CMULT_4						0x2000
+#define EBU_BUSCON_CMULT_8						0x4000
+#define EBU_BUSCON_CMULT_16						0x6000
+#define EBU_BUSCON_CMULT_32						0x8000
+#define EBU_BUSCON_ENDIAN						(1 << 16)			 // Big endian access mode
+#define EBU_BUSCON_ENDIAN_SHIFT					16
+#define EBU_BUSCON_DLOAD						(1 << 17)			 // Data accesses always come from the external bus, not the write buffer
+#define EBU_BUSCON_DLOAD_SHIFT					17
+#define EBU_BUSCON_PRE							(1 << 18)			 // Code accesses use the prefetch buffer
+#define EBU_BUSCON_PRE_SHIFT					18
+#define EBU_BUSCON_WAITINV						(1 << 19)			 // WAIT input is active high
+#define EBU_BUSCON_WAITINV_SHIFT				19
+#define EBU_BUSCON_BCGEN						(0x3 << 20)			 // Byte control signal timing
+#define EBU_BUSCON_BCGEN_SHIFT					20
+#define EBU_BUSCON_BCGEN_CS						0x0
+#define EBU_BUSCON_BCGEN_CONTROL				0x100000
+#define EBU_BUSCON_BCGEN_WRITE_ENABLE			0x200000
+#define EBU_BUSCON_BCGEN_DQM					0x300000
+#define EBU_BUSCON_PORTW						(0x3 << 22)			 // Port width
+#define EBU_BUSCON_PORTW_SHIFT					22
+#define EBU_BUSCON_PORTW_16BIT					0x400000
+#define EBU_BUSCON_PORTW_32BIT					0x800000
+#define EBU_BUSCON_WAIT							(0x3 << 24)			 // External wait state input
+#define EBU_BUSCON_WAIT_SHIFT					24
+#define EBU_BUSCON_WAIT_OFF						0x0
+#define EBU_BUSCON_WAIT_ASYNC					0x1000000
+#define EBU_BUSCON_WAIT_SYNC					0x2000000
+#define EBU_BUSCON_XCMDDELAY					(0x3 << 26)			 // External command delay input
+#define EBU_BUSCON_XCMDDELAY_SHIFT				26
+#define EBU_BUSCON_XCMDDELAY_OFF				0x0
+#define EBU_BUSCON_XCMDDELAY_ASYNC				0x4000000
+#define EBU_BUSCON_XCMDDELAY_SYNC				0x8000000
+#define EBU_BUSCON_AGEN							(0x7 << 28)			 // Address generation
+#define EBU_BUSCON_AGEN_SHIFT					28
+#define EBU_BUSCON_AGEN_ASYNC_DEMULTIPLEXED		0x0
+#define EBU_BUSCON_AGEN_ASYNC_MULTIPLEXED		0x10000000
+#define EBU_BUSCON_AGEN_BURST_FLASH_0			0x20000000
+#define EBU_BUSCON_AGEN_SDRAM_0					0x30000000
+#define EBU_BUSCON_AGEN_SDRAM_1					0x40000000
+#define EBU_BUSCON_AGEN_BURST_FLASH_1			0x50000000
+#define EBU_BUSCON_WRITE						(1U << 31)			 // Memory region write protection
+#define EBU_BUSCON_WRITE_SHIFT					31
 
-#define EBU_BUSAP0							0x100
-#define EBU_BUSAP1							0x108
-#define EBU_BUSAP2							0x110
-#define EBU_BUSAP3							0x118
-#define EBU_BUSAP4							0x120
-#define EBU_BUSAP5							0x128
-#define EBU_BUSAP6							0x130
-#define EBU_BUSAP_DTACS						(0xF << 0)			 // Between different regions
-#define EBU_BUSAP_DTACS_SHIFT				0
-#define EBU_BUSAP_DTARDWR					(0xF << 4)			 // Between read and write accesses
-#define EBU_BUSAP_DTARDWR_SHIFT				4
-#define EBU_BUSAP_WRRECOVC					(0x7 << 8)			 // After write accesses
-#define EBU_BUSAP_WRRECOVC_SHIFT			8
-#define EBU_BUSAP_RDRECOVC					(0x7 << 11)			 // After read accesses
-#define EBU_BUSAP_RDRECOVC_SHIFT			11
-#define EBU_BUSAP_DATAC						(0x3 << 14)			 // Write accesses
-#define EBU_BUSAP_DATAC_SHIFT				14
-#define EBU_BUSAP_BURSTC					(0x7 << 16)			 // During burst accesses
-#define EBU_BUSAP_BURSTC_SHIFT				16
-#define EBU_BUSAP_WAITWRC					(0x7 << 19)			 // Programmed for wait accesses
-#define EBU_BUSAP_WAITWRC_SHIFT				19
-#define EBU_BUSAP_WAITRDC					(0x7 << 22)			 // Programmed for read accesses
-#define EBU_BUSAP_WAITRDC_SHIFT				22
-#define EBU_BUSAP_CMDDELAY					(0x7 << 25)			 // Programmed command
-#define EBU_BUSAP_CMDDELAY_SHIFT			25
-#define EBU_BUSAP_AHOLDC					(0x3 << 28)			 // Multiplexed accesses
-#define EBU_BUSAP_AHOLDC_SHIFT				28
-#define EBU_BUSAP_ADDRC						(0x3U << 30)		 // Address Cycles
-#define EBU_BUSAP_ADDRC_SHIFT				30
+/* EBU Bus Access Parameter Register */
+#define EBU_BUSAP0								0x100
+#define EBU_BUSAP1								0x108
+#define EBU_BUSAP2								0x110
+#define EBU_BUSAP3								0x118
+#define EBU_BUSAP4								0x120
+#define EBU_BUSAP5								0x128
+#define EBU_BUSAP6								0x130
+#define EBU_BUSAP_DTACS							(0xF << 0)			 // Recovery cycles between accesses to different regions
+#define EBU_BUSAP_DTACS_SHIFT					0
+#define EBU_BUSAP_DTARDWR						(0xF << 4)			 // Recovery cycles between read and write accesses
+#define EBU_BUSAP_DTARDWR_SHIFT					4
+#define EBU_BUSAP_WRRECOVC						(0x7 << 8)			 // Recovery cycles after write accesses
+#define EBU_BUSAP_WRRECOVC_SHIFT				8
+#define EBU_BUSAP_RDRECOVC						(0x7 << 11)			 // Recovery cycles after read accesses
+#define EBU_BUSAP_RDRECOVC_SHIFT				11
+#define EBU_BUSAP_DATAC							(0x3 << 14)			 // Data hold cycles for write accesses
+#define EBU_BUSAP_DATAC_SHIFT					14
+#define EBU_BUSAP_BURSTC						(0x7 << 16)			 // Data cycles during burst accesses
+#define EBU_BUSAP_BURSTC_SHIFT					16
+#define EBU_BUSAP_WAITWRC						(0x7 << 19)			 // Wait states for write accesses
+#define EBU_BUSAP_WAITWRC_SHIFT					19
+#define EBU_BUSAP_WAITRDC						(0x7 << 22)			 // Wait states for read accesses
+#define EBU_BUSAP_WAITRDC_SHIFT					22
+#define EBU_BUSAP_CMDDELAY						(0x7 << 25)			 // Command delay cycles
+#define EBU_BUSAP_CMDDELAY_SHIFT				25
+#define EBU_BUSAP_AHOLDC						(0x3 << 28)			 // Address hold cycles for multiplexed accesses
+#define EBU_BUSAP_AHOLDC_SHIFT					28
+#define EBU_BUSAP_ADDRC							(0x3U << 30)		 // Address phase cycles
+#define EBU_BUSAP_ADDRC_SHIFT					30
 
-#define EBU_EMUAS							0x160
-#define EBU_EMUAS_REGENAB					(1 << 0)			 // Memory region
-#define EBU_EMUAS_REGENAB_SHIFT				0
-#define EBU_EMUAS_ALTENAB					(1 << 1)			 // Alternate segment comparison
-#define EBU_EMUAS_ALTENAB_SHIFT				1
-#define EBU_EMUAS_MASK						(0xF << 4)			 // Address mask
-#define EBU_EMUAS_MASK_SHIFT				4
-#define EBU_EMUAS_ALTSEG					(0xF << 8)			 // Alternate segment
-#define EBU_EMUAS_ALTSEG_SHIFT				8
-#define EBU_EMUAS_BASE						(0xFFFFFU << 12)	 // Base address
-#define EBU_EMUAS_BASE_SHIFT				12
+/* EBU Emulator Address Select Register */
+#define EBU_EMUAS								0x160
+#define EBU_EMUAS_REGENAB						(1 << 0)			 // Memory region enable
+#define EBU_EMUAS_REGENAB_SHIFT					0
+#define EBU_EMUAS_ALTENAB						(1 << 1)			 // Compare the alternate segment
+#define EBU_EMUAS_ALTENAB_SHIFT					1
+#define EBU_EMUAS_MASK							(0xF << 4)			 // Number of base address bits from bit 26 included in the comparison
+#define EBU_EMUAS_MASK_SHIFT					4
+#define EBU_EMUAS_ALTSEG						(0xF << 8)			 // Alternate segment compared with address bits 31-28
+#define EBU_EMUAS_ALTSEG_SHIFT					8
+#define EBU_EMUAS_BASE							(0xFFFFFU << 12)	 // Memory region base address
+#define EBU_EMUAS_BASE_SHIFT					12
 
-#define EBU_EMUBC							0x168
-#define EBU_EMUBC_MULTMAP					(0x7F << 0)			 // Multiplier map
-#define EBU_EMUBC_MULTMAP_SHIFT				0
-#define EBU_EMUBC_UNK7						(1 << 7)			 // Undocumented writable field
-#define EBU_EMUBC_UNK7_SHIFT				7
-#define EBU_EMUBC_WPRE						(1 << 8)			 // Weak prefetch
-#define EBU_EMUBC_WPRE_SHIFT				8
-#define EBU_EMUBC_AALIGN					(1 << 9)			 // Address alignment
-#define EBU_EMUBC_AALIGN_SHIFT				9
-#define EBU_EMUBC_CTYPE						(0x3 << 10)			 // Cycle Type
-#define EBU_EMUBC_CTYPE_SHIFT				10
-#define EBU_EMUBC_CMULT						(0x7 << 13)			 // Cycle multiplier
-#define EBU_EMUBC_CMULT_SHIFT				13
-#define EBU_EMUBC_ENDIAN					(1 << 16)			 // Endian mode
-#define EBU_EMUBC_ENDIAN_SHIFT				16
-#define EBU_EMUBC_DLOAD						(1 << 17)			 // Data upload
-#define EBU_EMUBC_DLOAD_SHIFT				17
-#define EBU_EMUBC_PRE						(1 << 18)			 // Prefetch mechanism
-#define EBU_EMUBC_PRE_SHIFT					18
-#define EBU_EMUBC_WAITINV					(1 << 19)			 // Reversed polarity at WAIT
-#define EBU_EMUBC_WAITINV_SHIFT				19
-#define EBU_EMUBC_BCGEN						(0x3 << 20)			 // Signal timing mode
-#define EBU_EMUBC_BCGEN_SHIFT				20
-#define EBU_EMUBC_PORTW						(0x3 << 22)			 // Port width
-#define EBU_EMUBC_PORTW_SHIFT				22
-#define EBU_EMUBC_WAIT						(0x3 << 24)			 // External wait state
-#define EBU_EMUBC_WAIT_SHIFT				24
-#define EBU_EMUBC_XCMDDELAY					(0x3 << 26)			 // External command delay
-#define EBU_EMUBC_XCMDDELAY_SHIFT			26
-#define EBU_EMUBC_AGEN						(0x7 << 28)			 // Address generation
-#define EBU_EMUBC_AGEN_SHIFT				28
-#define EBU_EMUBC_AGEN_ASYNC_DEMULTIPLEXED	0x0
-#define EBU_EMUBC_AGEN_ASYNC_MULTIPLEXED	0x10000000
-#define EBU_EMUBC_AGEN_BURST_FLASH_0		0x20000000
-#define EBU_EMUBC_AGEN_SDRAM_0				0x30000000
-#define EBU_EMUBC_AGEN_SDRAM_1				0x40000000
-#define EBU_EMUBC_AGEN_BURST_FLASH_1		0x50000000
-#define EBU_EMUBC_WRITE						(1U << 31)			 // Write protection
-#define EBU_EMUBC_WRITE_SHIFT				31
+/* EBU Emulator Bus Configuration Register */
+#define EBU_EMUBC								0x168
+#define EBU_EMUBC_MULTMAP						(0x7F << 0)			 // Delay cycle fields that use the CMULT multiplier
+#define EBU_EMUBC_MULTMAP_SHIFT					0
+#define EBU_EMUBC_UNK7							(1 << 7)			 // Undocumented writable field
+#define EBU_EMUBC_UNK7_SHIFT					7
+#define EBU_EMUBC_WPRE							(1 << 8)			 // A data access can abort a running prefetch
+#define EBU_EMUBC_WPRE_SHIFT					8
+#define EBU_EMUBC_AALIGN						(1 << 9)			 // Align the address to the port width
+#define EBU_EMUBC_AALIGN_SHIFT					9
+#define EBU_EMUBC_CTYPE							(0x3 << 10)			 // Address and data bus multiplexing for burst flash
+#define EBU_EMUBC_CTYPE_SHIFT					10
+#define EBU_EMUBC_CTYPE_NON_MULTIPLEXED			0x0
+#define EBU_EMUBC_CTYPE_MULTIPLEXED				0x400
+#define EBU_EMUBC_CTYPE_TWIN_16BIT_MULTIPLEXED	0x800
+#define EBU_EMUBC_CMULT							(0x7 << 13)			 // Multiplier for the delay cycles selected by MULTMAP
+#define EBU_EMUBC_CMULT_SHIFT					13
+#define EBU_EMUBC_CMULT_1						0x0
+#define EBU_EMUBC_CMULT_4						0x2000
+#define EBU_EMUBC_CMULT_8						0x4000
+#define EBU_EMUBC_CMULT_16						0x6000
+#define EBU_EMUBC_CMULT_32						0x8000
+#define EBU_EMUBC_ENDIAN						(1 << 16)			 // Big endian access mode
+#define EBU_EMUBC_ENDIAN_SHIFT					16
+#define EBU_EMUBC_DLOAD							(1 << 17)			 // Data accesses always come from the external bus, not the write buffer
+#define EBU_EMUBC_DLOAD_SHIFT					17
+#define EBU_EMUBC_PRE							(1 << 18)			 // Code accesses use the prefetch buffer
+#define EBU_EMUBC_PRE_SHIFT						18
+#define EBU_EMUBC_WAITINV						(1 << 19)			 // WAIT input is active high
+#define EBU_EMUBC_WAITINV_SHIFT					19
+#define EBU_EMUBC_BCGEN							(0x3 << 20)			 // Byte control signal timing
+#define EBU_EMUBC_BCGEN_SHIFT					20
+#define EBU_EMUBC_BCGEN_CS						0x0
+#define EBU_EMUBC_BCGEN_CONTROL					0x100000
+#define EBU_EMUBC_BCGEN_WRITE_ENABLE			0x200000
+#define EBU_EMUBC_BCGEN_DQM						0x300000
+#define EBU_EMUBC_PORTW							(0x3 << 22)			 // Port width
+#define EBU_EMUBC_PORTW_SHIFT					22
+#define EBU_EMUBC_PORTW_16BIT					0x400000
+#define EBU_EMUBC_PORTW_32BIT					0x800000
+#define EBU_EMUBC_WAIT							(0x3 << 24)			 // External wait state input
+#define EBU_EMUBC_WAIT_SHIFT					24
+#define EBU_EMUBC_WAIT_OFF						0x0
+#define EBU_EMUBC_WAIT_ASYNC					0x1000000
+#define EBU_EMUBC_WAIT_SYNC						0x2000000
+#define EBU_EMUBC_XCMDDELAY						(0x3 << 26)			 // External command delay input
+#define EBU_EMUBC_XCMDDELAY_SHIFT				26
+#define EBU_EMUBC_XCMDDELAY_OFF					0x0
+#define EBU_EMUBC_XCMDDELAY_ASYNC				0x4000000
+#define EBU_EMUBC_XCMDDELAY_SYNC				0x8000000
+#define EBU_EMUBC_AGEN							(0x7 << 28)			 // Address generation
+#define EBU_EMUBC_AGEN_SHIFT					28
+#define EBU_EMUBC_AGEN_ASYNC_DEMULTIPLEXED		0x0
+#define EBU_EMUBC_AGEN_ASYNC_MULTIPLEXED		0x10000000
+#define EBU_EMUBC_AGEN_BURST_FLASH_0			0x20000000
+#define EBU_EMUBC_AGEN_SDRAM_0					0x30000000
+#define EBU_EMUBC_AGEN_SDRAM_1					0x40000000
+#define EBU_EMUBC_AGEN_BURST_FLASH_1			0x50000000
+#define EBU_EMUBC_WRITE							(1U << 31)			 // Memory region write protection
+#define EBU_EMUBC_WRITE_SHIFT					31
 
-#define EBU_EMUBAP							0x170
-#define EBU_EMUBAP_DTACS					(0xF << 0)			 // Between different regions
-#define EBU_EMUBAP_DTACS_SHIFT				0
-#define EBU_EMUBAP_DTARDWR					(0xF << 4)			 // Between read and write accesses
-#define EBU_EMUBAP_DTARDWR_SHIFT			4
-#define EBU_EMUBAP_WRRECOVC					(0x7 << 8)			 // After write accesses
-#define EBU_EMUBAP_WRRECOVC_SHIFT			8
-#define EBU_EMUBAP_RDRECOVC					(0x7 << 11)			 // After read accesses
-#define EBU_EMUBAP_RDRECOVC_SHIFT			11
-#define EBU_EMUBAP_DATAC					(0x3 << 14)			 // Write accesses
-#define EBU_EMUBAP_DATAC_SHIFT				14
-#define EBU_EMUBAP_BURSTC					(0x7 << 16)			 // During burst accesses
-#define EBU_EMUBAP_BURSTC_SHIFT				16
-#define EBU_EMUBAP_WAITWRC					(0x7 << 19)			 // Programmed for wait accesses
-#define EBU_EMUBAP_WAITWRC_SHIFT			19
-#define EBU_EMUBAP_WAITRDC					(0x7 << 22)			 // Programmed for read accesses
-#define EBU_EMUBAP_WAITRDC_SHIFT			22
-#define EBU_EMUBAP_CMDDELAY					(0x7 << 25)			 // Programmed command
-#define EBU_EMUBAP_CMDDELAY_SHIFT			25
-#define EBU_EMUBAP_AHOLDC					(0x3 << 28)			 // Multiplexed accesses
-#define EBU_EMUBAP_AHOLDC_SHIFT				28
-#define EBU_EMUBAP_ADDRC					(0x3U << 30)		 // Address Cycles
-#define EBU_EMUBAP_ADDRC_SHIFT				30
+/* EBU Emulator Bus Access Parameter Register */
+#define EBU_EMUBAP								0x170
+#define EBU_EMUBAP_DTACS						(0xF << 0)			 // Recovery cycles between accesses to different regions
+#define EBU_EMUBAP_DTACS_SHIFT					0
+#define EBU_EMUBAP_DTARDWR						(0xF << 4)			 // Recovery cycles between read and write accesses
+#define EBU_EMUBAP_DTARDWR_SHIFT				4
+#define EBU_EMUBAP_WRRECOVC						(0x7 << 8)			 // Recovery cycles after write accesses
+#define EBU_EMUBAP_WRRECOVC_SHIFT				8
+#define EBU_EMUBAP_RDRECOVC						(0x7 << 11)			 // Recovery cycles after read accesses
+#define EBU_EMUBAP_RDRECOVC_SHIFT				11
+#define EBU_EMUBAP_DATAC						(0x3 << 14)			 // Data hold cycles for write accesses
+#define EBU_EMUBAP_DATAC_SHIFT					14
+#define EBU_EMUBAP_BURSTC						(0x7 << 16)			 // Data cycles during burst accesses
+#define EBU_EMUBAP_BURSTC_SHIFT					16
+#define EBU_EMUBAP_WAITWRC						(0x7 << 19)			 // Wait states for write accesses
+#define EBU_EMUBAP_WAITWRC_SHIFT				19
+#define EBU_EMUBAP_WAITRDC						(0x7 << 22)			 // Wait states for read accesses
+#define EBU_EMUBAP_WAITRDC_SHIFT				22
+#define EBU_EMUBAP_CMDDELAY						(0x7 << 25)			 // Command delay cycles
+#define EBU_EMUBAP_CMDDELAY_SHIFT				25
+#define EBU_EMUBAP_AHOLDC						(0x3 << 28)			 // Address hold cycles for multiplexed accesses
+#define EBU_EMUBAP_AHOLDC_SHIFT					28
+#define EBU_EMUBAP_ADDRC						(0x3U << 30)		 // Address phase cycles
+#define EBU_EMUBAP_ADDRC_SHIFT					30
 
-#define EBU_EMUOVL							0x178
-#define EBU_EMUOVL_OVERLAY					(0xFF << 0)			 // Overlay chip select
-#define EBU_EMUOVL_OVERLAY_SHIFT			0
+/* EBU Emulator Overlay Register */
+#define EBU_EMUOVL								0x178
+#define EBU_EMUOVL_OVERLAY						(0xFF << 0)			 // Chip selects that also assert CSovl
+#define EBU_EMUOVL_OVERLAY_SHIFT				0
 
-#define EBU_USERCON							0x190
+/* EBU Test/Control Configuration Register */
+#define EBU_USERCON								0x190
 
 
 // GPIO [MOD_NUM=F023, MOD_REV=00, MOD_32BIT=C0]
@@ -7172,214 +7265,429 @@
 // USB [MOD_NUM=F047, MOD_REV=00, MOD_32BIT=C0]
 // USB [MOD_NUM=F047, MOD_REV=12, MOD_32BIT=C0]
 // sci-worx USB device controller
-#define USB_IO_SIZE									0x00000900
+#define USB_IO_SIZE												0x00000900
 /* Endpoint Enable Register, endpoints 0-7 */
-#define USB_EP_ENABLE_LOW							0x00
-#define USB_EP_ENABLE_LOW_ENDPOINTS					(0xFF << 0)
-#define USB_EP_ENABLE_LOW_ENDPOINTS_SHIFT			0
+#define USB_EP_ENABLE_LOW										0x00
+#define USB_EP_ENABLE_LOW_ENDPOINTS								(0xFF << 0)		 // Bit n enables endpoint n
+#define USB_EP_ENABLE_LOW_ENDPOINTS_SHIFT						0
 
 /* Endpoint Enable Register, endpoints 8-10 */
-#define USB_EP_ENABLE_HIGH							0x04
-#define USB_EP_ENABLE_HIGH_ENDPOINTS				(0x7 << 0)
-#define USB_EP_ENABLE_HIGH_ENDPOINTS_SHIFT			0
+#define USB_EP_ENABLE_HIGH										0x04
+#define USB_EP_ENABLE_HIGH_ENDPOINTS							(0x7 << 0)		 // Bit n enables endpoint n + 8
+#define USB_EP_ENABLE_HIGH_ENDPOINTS_SHIFT						0
 
-/* USB Device Address Register */
-#define USB_DEVICE_ADDRESS							0x08
-#define USB_DEVICE_ADDRESS_ADDRESS					(0x7F << 0)
-#define USB_DEVICE_ADDRESS_ADDRESS_SHIFT			0
-#define USB_DEVICE_ADDRESS_ENABLE					(1 << 7)	 // Device address is active
-#define USB_DEVICE_ADDRESS_ENABLE_SHIFT				7
-
-/* USB Frame Number Low Register */
-#define USB_FRAME_NUMBER_LOW						0x0C
-#define USB_FRAME_NUMBER_LOW_VALUE					(0xFF << 0)
-#define USB_FRAME_NUMBER_LOW_VALUE_SHIFT			0
+/* USB Device Address Register (bus reset clears ADDRESS) */
+#define USB_DEVICE_ADDRESS										0x08
+#define USB_DEVICE_ADDRESS_ADDRESS								(0x7F << 0)		 // USB device address
+#define USB_DEVICE_ADDRESS_ADDRESS_SHIFT						0
+#define USB_DEVICE_ADDRESS_ENABLE								(1 << 7)		 // Enable the device function
+#define USB_DEVICE_ADDRESS_ENABLE_SHIFT							7
 
 /* USB Frame Number High Register */
-#define USB_FRAME_NUMBER_HIGH						0x10
-#define USB_FRAME_NUMBER_HIGH_VALUE					(0x7 << 0)
-#define USB_FRAME_NUMBER_HIGH_VALUE_SHIFT			0
+#define USB_FRAME_NUMBER_HIGH									0x0C
+#define USB_FRAME_NUMBER_HIGH_VALUE								(0x7 << 0)		 // Frame number bits 10:8
+#define USB_FRAME_NUMBER_HIGH_VALUE_SHIFT						0
+
+/* USB Frame Number Low Register */
+#define USB_FRAME_NUMBER_LOW									0x10
+#define USB_FRAME_NUMBER_LOW_VALUE								(0xFF << 0)		 // Frame number bits 7:0
+#define USB_FRAME_NUMBER_LOW_VALUE_SHIFT						0
 
 /* USB Core Control Register */
-#define USB_CONTROL									0x18
-#define USB_CONTROL_ENABLE							(1 << 0)	 // Enable USB core
-#define USB_CONTROL_ENABLE_SHIFT					0
+#define USB_CONTROL												0x18
+#define USB_CONTROL_ENABLE										(1 << 0)		 // Enable the core; 0 resets configuration, interrupts and timers, core registers read 0
+#define USB_CONTROL_ENABLE_SHIFT								0
 
 /* Setup Packet Byte Register */
-#define USB_SETUP_PACKET0							0x1C
-#define USB_SETUP_PACKET1							0x20
-#define USB_SETUP_PACKET2							0x24
-#define USB_SETUP_PACKET3							0x28
-#define USB_SETUP_PACKET4							0x2C
-#define USB_SETUP_PACKET5							0x30
-#define USB_SETUP_PACKET6							0x34
-#define USB_SETUP_PACKET7							0x38
-#define USB_SETUP_PACKET_DATA						(0xFF << 0)
-#define USB_SETUP_PACKET_DATA_SHIFT					0
+#define USB_SETUP_PACKET0										0x1C
+#define USB_SETUP_PACKET1										0x20
+#define USB_SETUP_PACKET2										0x24
+#define USB_SETUP_PACKET3										0x28
+#define USB_SETUP_PACKET4										0x2C
+#define USB_SETUP_PACKET5										0x30
+#define USB_SETUP_PACKET6										0x34
+#define USB_SETUP_PACKET7										0x38
+#define USB_SETUP_PACKET_DATA									(0xFF << 0)		 // SETUP packet byte
+#define USB_SETUP_PACKET_DATA_SHIFT								0
 
-/* Endpoint 0 Status Register */
-#define USB_EP0_STATUS								0x3C
+/* Endpoint Configuration Register; slot 0 = EP0 OUT, 1 = EP0 IN, n + 1 = EPn */
+#define USB_EP_CONFIG0											0x3C
+#define USB_EP_CONFIG1											0x40
+#define USB_EP_CONFIG2											0x44
+#define USB_EP_CONFIG3											0x48
+#define USB_EP_CONFIG4											0x4C
+#define USB_EP_CONFIG5											0x50
+#define USB_EP_CONFIG6											0x54
+#define USB_EP_CONFIG7											0x58
+#define USB_EP_CONFIG8											0x5C
+#define USB_EP_CONFIG9											0x60
+#define USB_EP_CONFIG10											0x64
+#define USB_EP_CONFIG11											0x68
+#define USB_EP_CONFIG_ZLP										(1 << 0)		 // IN: send a zero-length packet; OUT: zero-length packet received
+#define USB_EP_CONFIG_ZLP_SHIFT									0
+#define USB_EP_CONFIG_ISO										(1 << 1)		 // Isochronous endpoint (EP1-EP10); bits 5:4 read as zero while set
+#define USB_EP_CONFIG_ISO_SHIFT									1
+#define USB_EP_CONFIG_CONTROL									(1 << 2)		 // Control endpoint (read-only)
+#define USB_EP_CONFIG_CONTROL_SHIFT								2
+#define USB_EP_CONFIG_IN										(1 << 3)		 // IN endpoint (read-only)
+#define USB_EP_CONFIG_IN_SHIFT									3
+#define USB_EP_CONFIG_NAK										(1 << 5)		 // Slot not armed; set when a transfer completes
+#define USB_EP_CONFIG_NAK_SHIFT									5
+#define USB_EP_CONFIG_STALL										(1 << 6)		 // Answer tokens with STALL
+#define USB_EP_CONFIG_STALL_SHIFT								6
 
-/* Endpoint Configuration Register */
-#define USB_EP_CONFIG0								0x40
-#define USB_EP_CONFIG1								0x44
-#define USB_EP_CONFIG2								0x48
-#define USB_EP_CONFIG3								0x4C
-#define USB_EP_CONFIG4								0x50
-#define USB_EP_CONFIG5								0x54
-#define USB_EP_CONFIG6								0x58
-#define USB_EP_CONFIG7								0x5C
-#define USB_EP_CONFIG8								0x60
-#define USB_EP_CONFIG9								0x64
-#define USB_EP_CONFIG10								0x68
+/* Endpoint Maximum Packet Size High Register, endpoints 0-10 */
+#define USB_EP_MAX_PACKET_HIGH0									0x80
+#define USB_EP_MAX_PACKET_HIGH1									0x90
+#define USB_EP_MAX_PACKET_HIGH2									0xA0
+#define USB_EP_MAX_PACKET_HIGH3									0xB0
+#define USB_EP_MAX_PACKET_HIGH4									0xC0
+#define USB_EP_MAX_PACKET_HIGH5									0xD0
+#define USB_EP_MAX_PACKET_HIGH6									0xE0
+#define USB_EP_MAX_PACKET_HIGH7									0xF0
+#define USB_EP_MAX_PACKET_HIGH8									0x100
+#define USB_EP_MAX_PACKET_HIGH9									0x110
+#define USB_EP_MAX_PACKET_HIGH10								0x120
+#define USB_EP_MAX_PACKET_HIGH_VALUE							(0x7 << 0)		 // Maximum packet size bits 10:8
+#define USB_EP_MAX_PACKET_HIGH_VALUE_SHIFT						0
+
+/* Endpoint Maximum Packet Size Low Register, endpoints 0-10 */
+#define USB_EP_MAX_PACKET_LOW0									0x84
+#define USB_EP_MAX_PACKET_LOW1									0x94
+#define USB_EP_MAX_PACKET_LOW2									0xA4
+#define USB_EP_MAX_PACKET_LOW3									0xB4
+#define USB_EP_MAX_PACKET_LOW4									0xC4
+#define USB_EP_MAX_PACKET_LOW5									0xD4
+#define USB_EP_MAX_PACKET_LOW6									0xE4
+#define USB_EP_MAX_PACKET_LOW7									0xF4
+#define USB_EP_MAX_PACKET_LOW8									0x104
+#define USB_EP_MAX_PACKET_LOW9									0x114
+#define USB_EP_MAX_PACKET_LOW10									0x124
+#define USB_EP_MAX_PACKET_LOW_VALUE								(0xFF << 0)		 // Maximum packet size bits 7:0
+#define USB_EP_MAX_PACKET_LOW_VALUE_SHIFT						0
 
 /* Global Interrupt Status Register (write one to clear) */
-#define USB_GLOBAL_INT_STATUS						0x180
-#define USB_GLOBAL_INT_STATUS_SOURCES				(0xFF << 0)
-#define USB_GLOBAL_INT_STATUS_SOURCES_SHIFT			0
+#define USB_GLOBAL_INT_STATUS									0x180
+#define USB_GLOBAL_INT_STATUS_EP0_OUT							(1 << 1)		 // EP0 OUT or SETUP packet received
+#define USB_GLOBAL_INT_STATUS_EP0_OUT_SHIFT						1
+#define USB_GLOBAL_INT_STATUS_EP0_IN							(1 << 2)		 // EP0 IN packet sent
+#define USB_GLOBAL_INT_STATUS_EP0_IN_SHIFT						2
+#define USB_GLOBAL_INT_STATUS_EVENT								(1 << 5)		 // Enabled USB event latched
+#define USB_GLOBAL_INT_STATUS_EVENT_SHIFT						5
+#define USB_GLOBAL_INT_STATUS_EP_READY_LOW						(1 << 6)		 // Enabled FIFO ready event of endpoints 0-7
+#define USB_GLOBAL_INT_STATUS_EP_READY_LOW_SHIFT				6
+#define USB_GLOBAL_INT_STATUS_EP_READY_HIGH						(1 << 7)		 // Enabled FIFO ready event of endpoints 8-10
+#define USB_GLOBAL_INT_STATUS_EP_READY_HIGH_SHIFT				7
 
-/* Global Interrupt Enable Register */
-#define USB_GLOBAL_INT_ENABLE						0x184
-#define USB_GLOBAL_INT_ENABLE_SOURCES				(0xFF << 0)
-#define USB_GLOBAL_INT_ENABLE_SOURCES_SHIFT			0
+/* Global Interrupt Enable Register (gates the IRQ line) */
+#define USB_GLOBAL_INT_ENABLE									0x184
+#define USB_GLOBAL_INT_ENABLE_EP0_OUT							(1 << 1)		 // EP0 OUT or SETUP packet received
+#define USB_GLOBAL_INT_ENABLE_EP0_OUT_SHIFT						1
+#define USB_GLOBAL_INT_ENABLE_EP0_IN							(1 << 2)		 // EP0 IN packet sent
+#define USB_GLOBAL_INT_ENABLE_EP0_IN_SHIFT						2
+#define USB_GLOBAL_INT_ENABLE_EVENT								(1 << 5)		 // Enabled USB event latched
+#define USB_GLOBAL_INT_ENABLE_EVENT_SHIFT						5
+#define USB_GLOBAL_INT_ENABLE_EP_READY_LOW						(1 << 6)		 // Enabled FIFO ready event of endpoints 0-7
+#define USB_GLOBAL_INT_ENABLE_EP_READY_LOW_SHIFT				6
+#define USB_GLOBAL_INT_ENABLE_EP_READY_HIGH						(1 << 7)		 // Enabled FIFO ready event of endpoints 8-10
+#define USB_GLOBAL_INT_ENABLE_EP_READY_HIGH_SHIFT				7
 
 /* DMA Channel Group 0 Interrupt Status Register (write one to clear) */
-#define USB_DMA0_INT_STATUS							0x188
-#define USB_DMA0_INT_STATUS_SOURCES					(0xFF << 0)
-#define USB_DMA0_INT_STATUS_SOURCES_SHIFT			0
+#define USB_DMA0_INT_STATUS										0x188
+#define USB_DMA0_INT_STATUS_SOURCES								(0xFF << 0)
+#define USB_DMA0_INT_STATUS_SOURCES_SHIFT						0
 
 /* DMA Channel Group 0 Interrupt Enable Register */
-#define USB_DMA0_INT_ENABLE							0x18C
-#define USB_DMA0_INT_ENABLE_SOURCES					(0xFF << 0)
-#define USB_DMA0_INT_ENABLE_SOURCES_SHIFT			0
+#define USB_DMA0_INT_ENABLE										0x18C
+#define USB_DMA0_INT_ENABLE_SOURCES								(0xFF << 0)
+#define USB_DMA0_INT_ENABLE_SOURCES_SHIFT						0
 
 /* DMA Channel Group 1 Interrupt Status Register (write one to clear) */
-#define USB_DMA1_INT_STATUS							0x190
-#define USB_DMA1_INT_STATUS_SOURCES					(0x3 << 0)
-#define USB_DMA1_INT_STATUS_SOURCES_SHIFT			0
+#define USB_DMA1_INT_STATUS										0x190
+#define USB_DMA1_INT_STATUS_SOURCES								(0x3 << 0)
+#define USB_DMA1_INT_STATUS_SOURCES_SHIFT						0
 
 /* DMA Channel Group 1 Interrupt Enable Register */
-#define USB_DMA1_INT_ENABLE							0x194
-#define USB_DMA1_INT_ENABLE_SOURCES					(0x3 << 0)
-#define USB_DMA1_INT_ENABLE_SOURCES_SHIFT			0
+#define USB_DMA1_INT_ENABLE										0x194
+#define USB_DMA1_INT_ENABLE_SOURCES								(0x3 << 0)
+#define USB_DMA1_INT_ENABLE_SOURCES_SHIFT						0
 
 /* USB Event Interrupt Status Register (write one to clear) */
-#define USB_EVENT_INT_STATUS						0x198
-#define USB_EVENT_INT_STATUS_EVENTS					(0xFF << 0)
-#define USB_EVENT_INT_STATUS_EVENTS_SHIFT			0
+#define USB_EVENT_INT_STATUS									0x198
+#define USB_EVENT_INT_STATUS_WAKEUP_DONE						(1 << 0)		 // Remote wakeup signalling finished
+#define USB_EVENT_INT_STATUS_WAKEUP_DONE_SHIFT					0
+#define USB_EVENT_INT_STATUS_SUSPEND							(1 << 1)		 // Bus idle for 3 ms
+#define USB_EVENT_INT_STATUS_SUSPEND_SHIFT						1
+#define USB_EVENT_INT_STATUS_IDLE								(1 << 2)		 // Bus idle for 5 ms (2 ms after SUSPEND)
+#define USB_EVENT_INT_STATUS_IDLE_SHIFT							2
+#define USB_EVENT_INT_STATUS_RESET								(1 << 3)		 // Bus reset (SE0) detected
+#define USB_EVENT_INT_STATUS_RESET_SHIFT						3
+#define USB_EVENT_INT_STATUS_RESUME								(1 << 4)		 // Resume signalling from the host
+#define USB_EVENT_INT_STATUS_RESUME_SHIFT						4
+#define USB_EVENT_INT_STATUS_SETUP								(1 << 5)		 // SETUP packet received
+#define USB_EVENT_INT_STATUS_SETUP_SHIFT						5
+#define USB_EVENT_INT_STATUS_EP_DONE_LOW						(1 << 6)		 // Transfer done event of endpoints 0-7
+#define USB_EVENT_INT_STATUS_EP_DONE_LOW_SHIFT					6
+#define USB_EVENT_INT_STATUS_EP_DONE_HIGH						(1 << 7)		 // Transfer done event of endpoints 8-10
+#define USB_EVENT_INT_STATUS_EP_DONE_HIGH_SHIFT					7
 
-/* USB Event Interrupt Enable Register */
-#define USB_EVENT_INT_ENABLE						0x19C
-#define USB_EVENT_INT_ENABLE_EVENTS					(0xFF << 0)
-#define USB_EVENT_INT_ENABLE_EVENTS_SHIFT			0
+/* USB Event Interrupt Enable Register (gates GLOBAL_INT_STATUS.EVENT) */
+#define USB_EVENT_INT_ENABLE									0x19C
+#define USB_EVENT_INT_ENABLE_WAKEUP_DONE						(1 << 0)		 // Remote wakeup signalling finished
+#define USB_EVENT_INT_ENABLE_WAKEUP_DONE_SHIFT					0
+#define USB_EVENT_INT_ENABLE_SUSPEND							(1 << 1)		 // Bus idle for 3 ms
+#define USB_EVENT_INT_ENABLE_SUSPEND_SHIFT						1
+#define USB_EVENT_INT_ENABLE_IDLE								(1 << 2)		 // Bus idle for 5 ms (2 ms after SUSPEND)
+#define USB_EVENT_INT_ENABLE_IDLE_SHIFT							2
+#define USB_EVENT_INT_ENABLE_RESET								(1 << 3)		 // Bus reset (SE0) detected
+#define USB_EVENT_INT_ENABLE_RESET_SHIFT						3
+#define USB_EVENT_INT_ENABLE_RESUME								(1 << 4)		 // Resume signalling from the host
+#define USB_EVENT_INT_ENABLE_RESUME_SHIFT						4
+#define USB_EVENT_INT_ENABLE_SETUP								(1 << 5)		 // SETUP packet received
+#define USB_EVENT_INT_ENABLE_SETUP_SHIFT						5
+#define USB_EVENT_INT_ENABLE_EP_DONE_LOW						(1 << 6)		 // Transfer done event of endpoints 0-7
+#define USB_EVENT_INT_ENABLE_EP_DONE_LOW_SHIFT					6
+#define USB_EVENT_INT_ENABLE_EP_DONE_HIGH						(1 << 7)		 // Transfer done event of endpoints 8-10
+#define USB_EVENT_INT_ENABLE_EP_DONE_HIGH_SHIFT					7
 
-/* Endpoint Interrupt Group A Status Register, endpoints 0-7 (write one to clear) */
-#define USB_EP_A_INT_STATUS_LOW						0x1A0
-#define USB_EP_A_INT_STATUS_LOW_ENDPOINTS			(0xFF << 0)
-#define USB_EP_A_INT_STATUS_LOW_ENDPOINTS_SHIFT		0
+/* Endpoint FIFO Ready Status Register, endpoints 0-7 (write one to clear) */
+#define USB_EP_READY_INT_STATUS_LOW								0x1A0
+#define USB_EP_READY_INT_STATUS_LOW_ENDPOINTS					(0xFF << 0)		 // Bit n reports endpoint n
+#define USB_EP_READY_INT_STATUS_LOW_ENDPOINTS_SHIFT				0
 
-/* Endpoint Interrupt Group A Enable Register, endpoints 0-7 */
-#define USB_EP_A_INT_ENABLE_LOW						0x1A4
-#define USB_EP_A_INT_ENABLE_LOW_ENDPOINTS			(0xFF << 0)
-#define USB_EP_A_INT_ENABLE_LOW_ENDPOINTS_SHIFT		0
+/* Endpoint FIFO Ready Enable Register, endpoints 0-7 */
+#define USB_EP_READY_INT_ENABLE_LOW								0x1A4
+#define USB_EP_READY_INT_ENABLE_LOW_ENDPOINTS					(0xFF << 0)		 // Bit n enables endpoint n
+#define USB_EP_READY_INT_ENABLE_LOW_ENDPOINTS_SHIFT				0
 
-/* Endpoint Interrupt Group A Status Register, endpoints 8-10 (write one to clear) */
-#define USB_EP_A_INT_STATUS_HIGH					0x1A8
-#define USB_EP_A_INT_STATUS_HIGH_ENDPOINTS			(0x7 << 0)
-#define USB_EP_A_INT_STATUS_HIGH_ENDPOINTS_SHIFT	0
+/* Endpoint FIFO Ready Status Register, endpoints 8-10 (write one to clear) */
+#define USB_EP_READY_INT_STATUS_HIGH							0x1A8
+#define USB_EP_READY_INT_STATUS_HIGH_ENDPOINTS					(0x7 << 0)		 // Bit n reports endpoint n + 8
+#define USB_EP_READY_INT_STATUS_HIGH_ENDPOINTS_SHIFT			0
 
-/* Endpoint Interrupt Group A Enable Register, endpoints 8-10 */
-#define USB_EP_A_INT_ENABLE_HIGH					0x1AC
-#define USB_EP_A_INT_ENABLE_HIGH_ENDPOINTS			(0x7 << 0)
-#define USB_EP_A_INT_ENABLE_HIGH_ENDPOINTS_SHIFT	0
+/* Endpoint FIFO Ready Enable Register, endpoints 8-10 */
+#define USB_EP_READY_INT_ENABLE_HIGH							0x1AC
+#define USB_EP_READY_INT_ENABLE_HIGH_ENDPOINTS					(0x7 << 0)		 // Bit n enables endpoint n + 8
+#define USB_EP_READY_INT_ENABLE_HIGH_ENDPOINTS_SHIFT			0
 
-/* Endpoint Interrupt Group B Status Register, endpoints 0-7 (write one to clear) */
-#define USB_EP_B_INT_STATUS_LOW						0x1B0
-#define USB_EP_B_INT_STATUS_LOW_ENDPOINTS			(0xFF << 0)
-#define USB_EP_B_INT_STATUS_LOW_ENDPOINTS_SHIFT		0
+/* Endpoint Transfer Done Status Register, endpoints 0-7 (write one to clear) */
+#define USB_EP_DONE_INT_STATUS_LOW								0x1B0
+#define USB_EP_DONE_INT_STATUS_LOW_ENDPOINTS					(0xFF << 0)		 // Bit n reports endpoint n
+#define USB_EP_DONE_INT_STATUS_LOW_ENDPOINTS_SHIFT				0
 
-/* Endpoint Interrupt Group B Enable Register, endpoints 0-7 */
-#define USB_EP_B_INT_ENABLE_LOW						0x1B4
-#define USB_EP_B_INT_ENABLE_LOW_ENDPOINTS			(0xFF << 0)
-#define USB_EP_B_INT_ENABLE_LOW_ENDPOINTS_SHIFT		0
+/* Endpoint Transfer Done Enable Register, endpoints 0-7 */
+#define USB_EP_DONE_INT_ENABLE_LOW								0x1B4
+#define USB_EP_DONE_INT_ENABLE_LOW_ENDPOINTS					(0xFF << 0)		 // Bit n enables endpoint n
+#define USB_EP_DONE_INT_ENABLE_LOW_ENDPOINTS_SHIFT				0
 
-/* Endpoint Interrupt Group B Status Register, endpoints 8-10 (write one to clear) */
-#define USB_EP_B_INT_STATUS_HIGH					0x1B8
-#define USB_EP_B_INT_STATUS_HIGH_ENDPOINTS			(0x7 << 0)
-#define USB_EP_B_INT_STATUS_HIGH_ENDPOINTS_SHIFT	0
+/* Endpoint Transfer Done Status Register, endpoints 8-10 (write one to clear) */
+#define USB_EP_DONE_INT_STATUS_HIGH								0x1B8
+#define USB_EP_DONE_INT_STATUS_HIGH_ENDPOINTS					(0x7 << 0)		 // Bit n reports endpoint n + 8
+#define USB_EP_DONE_INT_STATUS_HIGH_ENDPOINTS_SHIFT				0
 
-/* Endpoint Interrupt Group B Enable Register, endpoints 8-10 */
-#define USB_EP_B_INT_ENABLE_HIGH					0x1BC
-#define USB_EP_B_INT_ENABLE_HIGH_ENDPOINTS			(0x7 << 0)
-#define USB_EP_B_INT_ENABLE_HIGH_ENDPOINTS_SHIFT	0
+/* Endpoint Transfer Done Enable Register, endpoints 8-10 */
+#define USB_EP_DONE_INT_ENABLE_HIGH								0x1BC
+#define USB_EP_DONE_INT_ENABLE_HIGH_ENDPOINTS					(0x7 << 0)		 // Bit n enables endpoint n + 8
+#define USB_EP_DONE_INT_ENABLE_HIGH_ENDPOINTS_SHIFT				0
 
-/* Endpoint FIFO Data Register */
-#define USB_EP_DATA0								0x1C0
-#define USB_EP_DATA1								0x1D0
-#define USB_EP_DATA2								0x1E0
-#define USB_EP_DATA3								0x1F0
-#define USB_EP_DATA4								0x200
-#define USB_EP_DATA5								0x210
-#define USB_EP_DATA6								0x220
-#define USB_EP_DATA7								0x230
-#define USB_EP_DATA8								0x240
-#define USB_EP_DATA9								0x250
-#define USB_EP_DATA10								0x260
+/* Endpoint FIFO Data Register, one byte per access; slot as EP_CONFIG */
+#define USB_EP_DATA0											0x1C0
+#define USB_EP_DATA1											0x1D0
+#define USB_EP_DATA2											0x1E0
+#define USB_EP_DATA3											0x1F0
+#define USB_EP_DATA4											0x200
+#define USB_EP_DATA5											0x210
+#define USB_EP_DATA6											0x220
+#define USB_EP_DATA7											0x230
+#define USB_EP_DATA8											0x240
+#define USB_EP_DATA9											0x250
+#define USB_EP_DATA10											0x260
+#define USB_EP_DATA11											0x270
+#define USB_EP_DATA_DATA										(0xFF << 0)		 // FIFO byte
+#define USB_EP_DATA_DATA_SHIFT									0
 
-/* Endpoint FIFO Control Register */
-#define USB_EP_CONTROL0								0x1C4
-#define USB_EP_CONTROL1								0x1D4
-#define USB_EP_CONTROL2								0x1E4
-#define USB_EP_CONTROL3								0x1F4
-#define USB_EP_CONTROL4								0x204
-#define USB_EP_CONTROL5								0x214
-#define USB_EP_CONTROL6								0x224
-#define USB_EP_CONTROL7								0x234
-#define USB_EP_CONTROL8								0x244
-#define USB_EP_CONTROL9								0x254
-#define USB_EP_CONTROL10							0x264
+/* Endpoint FIFO Control Register; slot as EP_CONFIG */
+#define USB_EP_CONTROL0											0x1C4
+#define USB_EP_CONTROL1											0x1D4
+#define USB_EP_CONTROL2											0x1E4
+#define USB_EP_CONTROL3											0x1F4
+#define USB_EP_CONTROL4											0x204
+#define USB_EP_CONTROL5											0x214
+#define USB_EP_CONTROL6											0x224
+#define USB_EP_CONTROL7											0x234
+#define USB_EP_CONTROL8											0x244
+#define USB_EP_CONTROL9											0x254
+#define USB_EP_CONTROL10										0x264
+#define USB_EP_CONTROL11										0x274
+#define USB_EP_CONTROL_FLUSH									(1 << 0)		 // Discard the FIFO contents (self-clearing)
+#define USB_EP_CONTROL_FLUSH_SHIFT								0
+#define USB_EP_CONTROL_ARM										(1 << 1)		 // Hand the buffer to the SIE (self-clearing)
+#define USB_EP_CONTROL_ARM_SHIFT								1
+#define USB_EP_CONTROL_COMMIT									(1 << 3)		 // IN: end the packet before it reaches the maximum packet size
+#define USB_EP_CONTROL_COMMIT_SHIFT								3
+#define USB_EP_CONTROL_IN_ENABLE								(1 << 6)		 // Enable the IN data path
+#define USB_EP_CONTROL_IN_ENABLE_SHIFT							6
+#define USB_EP_CONTROL_OUT_ENABLE								(1 << 7)		 // Enable the OUT data path
+#define USB_EP_CONTROL_OUT_ENABLE_SHIFT							7
 
-/* Endpoint FIFO Byte Count Low Register */
-#define USB_EP_COUNT_LOW0							0x1C8
-#define USB_EP_COUNT_LOW1							0x1D8
-#define USB_EP_COUNT_LOW2							0x1E8
-#define USB_EP_COUNT_LOW3							0x1F8
-#define USB_EP_COUNT_LOW4							0x208
-#define USB_EP_COUNT_LOW5							0x218
-#define USB_EP_COUNT_LOW6							0x228
-#define USB_EP_COUNT_LOW7							0x238
-#define USB_EP_COUNT_LOW8							0x248
-#define USB_EP_COUNT_LOW9							0x258
-#define USB_EP_COUNT_LOW10							0x268
-#define USB_EP_COUNT_LOW_VALUE						(0xFF << 0)
-#define USB_EP_COUNT_LOW_VALUE_SHIFT				0
+/* Endpoint FIFO Byte Count Low Register; IN: free bytes, OUT: received bytes */
+#define USB_EP_COUNT_LOW0										0x1C8
+#define USB_EP_COUNT_LOW1										0x1D8
+#define USB_EP_COUNT_LOW2										0x1E8
+#define USB_EP_COUNT_LOW3										0x1F8
+#define USB_EP_COUNT_LOW4										0x208
+#define USB_EP_COUNT_LOW5										0x218
+#define USB_EP_COUNT_LOW6										0x228
+#define USB_EP_COUNT_LOW7										0x238
+#define USB_EP_COUNT_LOW8										0x248
+#define USB_EP_COUNT_LOW9										0x258
+#define USB_EP_COUNT_LOW10										0x268
+#define USB_EP_COUNT_LOW11										0x278
+#define USB_EP_COUNT_LOW_VALUE									(0xFF << 0)		 // Byte count bits 7:0
+#define USB_EP_COUNT_LOW_VALUE_SHIFT							0
 
 /* Endpoint FIFO Byte Count High Register */
-#define USB_EP_COUNT_HIGH0							0x1CC
-#define USB_EP_COUNT_HIGH1							0x1DC
-#define USB_EP_COUNT_HIGH2							0x1EC
-#define USB_EP_COUNT_HIGH3							0x1FC
-#define USB_EP_COUNT_HIGH4							0x20C
-#define USB_EP_COUNT_HIGH5							0x21C
-#define USB_EP_COUNT_HIGH6							0x22C
-#define USB_EP_COUNT_HIGH7							0x23C
-#define USB_EP_COUNT_HIGH8							0x24C
-#define USB_EP_COUNT_HIGH9							0x25C
-#define USB_EP_COUNT_HIGH10							0x26C
-#define USB_EP_COUNT_HIGH_VALUE						(0x7 << 0)
-#define USB_EP_COUNT_HIGH_VALUE_SHIFT				0
+#define USB_EP_COUNT_HIGH0										0x1CC
+#define USB_EP_COUNT_HIGH1										0x1DC
+#define USB_EP_COUNT_HIGH2										0x1EC
+#define USB_EP_COUNT_HIGH3										0x1FC
+#define USB_EP_COUNT_HIGH4										0x20C
+#define USB_EP_COUNT_HIGH5										0x21C
+#define USB_EP_COUNT_HIGH6										0x22C
+#define USB_EP_COUNT_HIGH7										0x23C
+#define USB_EP_COUNT_HIGH8										0x24C
+#define USB_EP_COUNT_HIGH9										0x25C
+#define USB_EP_COUNT_HIGH10										0x26C
+#define USB_EP_COUNT_HIGH11										0x27C
+#define USB_EP_COUNT_HIGH_VALUE									(0x7 << 0)		 // Byte count bits 10:8
+#define USB_EP_COUNT_HIGH_VALUE_SHIFT							0
+#define USB_EP_COUNT_HIGH_ARMED									(1 << 3)		 // OUT FIFO armed
+#define USB_EP_COUNT_HIGH_ARMED_SHIFT							3
+#define USB_EP_COUNT_HIGH_LOW_LEVEL								(1 << 4)		 // FIFO used <= 1/4
+#define USB_EP_COUNT_HIGH_LOW_LEVEL_SHIFT						4
+#define USB_EP_COUNT_HIGH_HIGH_LEVEL							(1 << 5)		 // FIFO used >= 3/4
+#define USB_EP_COUNT_HIGH_HIGH_LEVEL_SHIFT						5
+#define USB_EP_COUNT_HIGH_EMPTY									(1 << 6)		 // FIFO holds no data
+#define USB_EP_COUNT_HIGH_EMPTY_SHIFT							6
+#define USB_EP_COUNT_HIGH_FULL									(1 << 7)		 // FIFO has no free space
+#define USB_EP_COUNT_HIGH_FULL_SHIFT							7
 
 /* USB PHY Control and Status Register */
-#define USB_PHY_CONTROL								0x2FC
+#define USB_PHY_CONTROL											0x2FC
+#define USB_PHY_CONTROL_SUSPEND									(1 << 0)		 // Bus idle for 3 ms (read-only)
+#define USB_PHY_CONTROL_SUSPEND_SHIFT							0
+#define USB_PHY_CONTROL_WAKEUP_STARTED							(1 << 1)		 // Set when remote wakeup K starts (sticky)
+#define USB_PHY_CONTROL_WAKEUP_STARTED_SHIFT					1
+#define USB_PHY_CONTROL_LINE_STATE								(0x3 << 2)		 // Received bus state (read-only)
+#define USB_PHY_CONTROL_LINE_STATE_SHIFT						2
+#define USB_PHY_CONTROL_LINE_STATE_SE0							0x0
+#define USB_PHY_CONTROL_LINE_STATE_J							0x4
+#define USB_PHY_CONTROL_LINE_STATE_K							0x8
+#define USB_PHY_CONTROL_RESUME									(1 << 5)		 // Drive remote wakeup K after 5 ms of bus idle
+#define USB_PHY_CONTROL_RESUME_SHIFT							5
+
+/* Endpoint FIFO Start Register, endpoints 0-10 */
+#define USB_EP_FIFO_START0										0x300
+#define USB_EP_FIFO_START1										0x308
+#define USB_EP_FIFO_START2										0x310
+#define USB_EP_FIFO_START3										0x318
+#define USB_EP_FIFO_START4										0x320
+#define USB_EP_FIFO_START5										0x328
+#define USB_EP_FIFO_START6										0x330
+#define USB_EP_FIFO_START7										0x338
+#define USB_EP_FIFO_START8										0x340
+#define USB_EP_FIFO_START9										0x348
+#define USB_EP_FIFO_START10										0x350
+#define USB_EP_FIFO_START_START									(0xFF << 0)		 // FIFO start in buffer RAM
+#define USB_EP_FIFO_START_START_SHIFT							0
+
+/* Endpoint FIFO Size Register, endpoints 0-10 */
+#define USB_EP_FIFO_SIZE0										0x304
+#define USB_EP_FIFO_SIZE1										0x30C
+#define USB_EP_FIFO_SIZE2										0x314
+#define USB_EP_FIFO_SIZE3										0x31C
+#define USB_EP_FIFO_SIZE4										0x324
+#define USB_EP_FIFO_SIZE5										0x32C
+#define USB_EP_FIFO_SIZE6										0x334
+#define USB_EP_FIFO_SIZE7										0x33C
+#define USB_EP_FIFO_SIZE8										0x344
+#define USB_EP_FIFO_SIZE9										0x34C
+#define USB_EP_FIFO_SIZE10										0x354
+#define USB_EP_FIFO_SIZE_SIZE									(0x7 << 4)		 // FIFO size 16 << SIZE bytes; 0 = no FIFO
+#define USB_EP_FIFO_SIZE_SIZE_SHIFT								4
+
+/* USB Frame Number Register */
+#define USB_FRAME_NUMBER										0x400
+#define USB_FRAME_NUMBER_VALUE									(0x7FF << 0)	 // Frame number
+#define USB_FRAME_NUMBER_VALUE_SHIFT							0
+
+/* Packed GLOBAL and EVENT Interrupt Status Register (write one to clear) */
+#define USB_GLOBAL_EVENT_INT_STATUS								0x40C
+#define USB_GLOBAL_EVENT_INT_STATUS_GLOBAL						(0xFF << 0)		 // GLOBAL_INT_STATUS
+#define USB_GLOBAL_EVENT_INT_STATUS_GLOBAL_SHIFT				0
+#define USB_GLOBAL_EVENT_INT_STATUS_EVENT						(0xFF << 8)		 // EVENT_INT_STATUS
+#define USB_GLOBAL_EVENT_INT_STATUS_EVENT_SHIFT					8
+
+/* Packed DMA and Endpoint FIFO Ready Status Register */
+#define USB_DMA_EP_READY_INT_STATUS								0x410
+#define USB_DMA_EP_READY_INT_STATUS_EP_READY_LOW				(0xFF << 16)	 // EP_READY_INT_STATUS_LOW
+#define USB_DMA_EP_READY_INT_STATUS_EP_READY_LOW_SHIFT			16
+
+/* Packed GLOBAL, EVENT and Endpoint Transfer Done Enable Register */
+#define USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE						0x414
+#define USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_GLOBAL				(0xFF << 0)		 // GLOBAL_INT_ENABLE
+#define USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_GLOBAL_SHIFT		0
+#define USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_EVENT				(0xFF << 8)		 // EVENT_INT_ENABLE
+#define USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_EVENT_SHIFT			8
+#define USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_EP_DONE_LOW			(0xFF << 16)	 // EP_DONE_INT_ENABLE_LOW
+#define USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_EP_DONE_LOW_SHIFT	16
+#define USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_EP_DONE_HIGH		(0x7 << 24)		 // EP_DONE_INT_ENABLE_HIGH
+#define USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_EP_DONE_HIGH_SHIFT	24
+
+/* Packed DMA and Endpoint FIFO Ready Enable Register */
+#define USB_DMA_EP_READY_INT_ENABLE								0x418
+#define USB_DMA_EP_READY_INT_ENABLE_DMA0						(0xFF << 0)		 // DMA0_INT_ENABLE
+#define USB_DMA_EP_READY_INT_ENABLE_DMA0_SHIFT					0
+#define USB_DMA_EP_READY_INT_ENABLE_DMA1						(0x3 << 8)		 // DMA1_INT_ENABLE
+#define USB_DMA_EP_READY_INT_ENABLE_DMA1_SHIFT					8
+#define USB_DMA_EP_READY_INT_ENABLE_EP_READY_LOW				(0xFF << 16)	 // EP_READY_INT_ENABLE_LOW
+#define USB_DMA_EP_READY_INT_ENABLE_EP_READY_LOW_SHIFT			16
+#define USB_DMA_EP_READY_INT_ENABLE_EP_READY_HIGH				(0x7 << 24)		 // EP_READY_INT_ENABLE_HIGH
+#define USB_DMA_EP_READY_INT_ENABLE_EP_READY_HIGH_SHIFT			24
+
+/* Packed EP0 FIFO Byte Count Register */
+#define USB_EP0_COUNT											0x41C
+#define USB_EP0_COUNT_OUT										(0xFFFF << 0)	 // EP_COUNT_HIGH(0) and EP_COUNT_LOW(0)
+#define USB_EP0_COUNT_OUT_SHIFT									0
+#define USB_EP0_COUNT_IN										(0xFFFFU << 16)	 // EP_COUNT_HIGH(1) and EP_COUNT_LOW(1)
+#define USB_EP0_COUNT_IN_SHIFT									16
+
+/* Packed FIFO Byte Count Register, endpoints 1-10 */
+#define USB_EP_COUNT0											0x420
+#define USB_EP_COUNT1											0x424
+#define USB_EP_COUNT2											0x428
+#define USB_EP_COUNT3											0x42C
+#define USB_EP_COUNT4											0x430
+#define USB_EP_COUNT5											0x434
+#define USB_EP_COUNT6											0x438
+#define USB_EP_COUNT7											0x43C
+#define USB_EP_COUNT8											0x440
+#define USB_EP_COUNT9											0x444
+#define USB_EP_COUNT_VALUE										(0xFFFF << 0)	 // EP_COUNT_HIGH and EP_COUNT_LOW of the endpoint
+#define USB_EP_COUNT_VALUE_SHIFT								0
 
 /* Clock Control Register */
-#define USB_CLC										0x800
+#define USB_CLC													0x800
 
 /* Wrapper Configuration Register */
-#define USB_CFG										0x804
+#define USB_CFG													0x804
+#define USB_CFG_PHY_ENABLE										(1 << 0)		 // Enable the transceiver; SE0 while the core is enabled signals a bus reset
+#define USB_CFG_PHY_ENABLE_SHIFT								0
+#define USB_CFG_DRIVE_ENABLE									(1 << 1)		 // Allow the device to drive K; reads 0 and has no effect on PMB8875, which always drives K
+#define USB_CFG_DRIVE_ENABLE_SHIFT								1
 
 /* Module Identifier Register */
-#define USB_ID										0x808
+#define USB_ID													0x808
 
 
 // USIF [MOD_NUM=F051, MOD_REV=12, MOD_32BIT=C0]

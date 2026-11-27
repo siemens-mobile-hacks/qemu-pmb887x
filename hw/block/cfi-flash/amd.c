@@ -17,8 +17,17 @@
 #define CFI_AMD_INDICATOR_CUSTOMER_LOCKED       BIT(6)
 #define CFI_AMD_INDICATOR_FACTORY_LOCKED        BIT(7)
 
-#define CFI_AMD_DYB_UNPROTECTED                 0x0001
-#define CFI_AMD_PPB_UNPROTECTED                 0x0001
+#define CFI_AMD_PROTECTION_CLEAR                0x0001
+
+#define CFI_AMD_LOCK_REGISTER_WORD              0x77
+#define CFI_AMD_LOCK_CUSTOMER_SECSI             BIT(0)
+#define CFI_AMD_LOCK_PERSISTENT_MODE            BIT(1)
+#define CFI_AMD_LOCK_PASSWORD_MODE              BIT(2)
+#define CFI_AMD_LOCK_MODE_BITS                  (CFI_AMD_LOCK_PERSISTENT_MODE | CFI_AMD_LOCK_PASSWORD_MODE)
+
+#define CFI_AMD_CONFIGURATION_DEFAULT           0xEFC8
+#define CFI_AMD_PASSWORD_WORDS                  4
+#define CFI_AMD_PASSWORD_INDEX_MASK             (CFI_AMD_PASSWORD_WORDS - 1)
 
 #define CFI_AMD_PRI_MAGIC                       0x495250
 #define CFI_AMD_PRI_UNLOCK_AND_TECHNOLOGY       0x05
@@ -43,13 +52,21 @@ enum CFIAmdPriVersion {
 enum CFIAmdCommand {
     CFI_AMD_CMD_COMMAND_SET_EXIT_CONFIRM        = 0x00,
     CFI_AMD_CMD_DYB_SET                         = 0x00,
+    CFI_AMD_CMD_PPB_PROGRAM                     = 0x00,
+    CFI_AMD_CMD_PPB_LOCK_BIT_SET                = 0x00,
+    CFI_AMD_CMD_UNLOCK_BYPASS_RESET_CONFIRM     = 0x00,
     CFI_AMD_CMD_DYB_CLEAR                       = 0x01,
+    CFI_AMD_CMD_PASSWORD_UNLOCK_WORD_COUNT      = 0x03,
     CFI_AMD_CMD_CHIP_ERASE                      = 0x10,
     CFI_AMD_CMD_UNLOCK_BYPASS_ENTRY             = 0x20,
     CFI_AMD_CMD_WRITE_TO_BUFFER                 = 0x25,
+    CFI_AMD_CMD_PASSWORD_UNLOCK                 = 0x25,
     CFI_AMD_CMD_PROGRAM_BUFFER_TO_FLASH         = 0x29,
+    CFI_AMD_CMD_PASSWORD_UNLOCK_CONFIRM         = 0x29,
     CFI_AMD_CMD_SECTOR_ERASE                    = 0x30,
     CFI_AMD_CMD_ERASE_RESUME                    = 0x30,
+    CFI_AMD_CMD_PROGRAM_RESUME                  = 0x30,
+    CFI_AMD_CMD_ALL_PPB_ERASE                   = 0x30,
     CFI_AMD_CMD_LOCK_REGISTER_ENTRY             = 0x40,
     CFI_AMD_CMD_GLOBAL_PPB_LOCK_ENTRY           = 0x50,
     CFI_AMD_CMD_UNLOCK2                         = 0x55,
@@ -58,10 +75,12 @@ enum CFIAmdCommand {
     CFI_AMD_CMD_SECSI_SECTOR_ENTRY              = 0x88,
     CFI_AMD_CMD_AUTOSELECT                      = 0x90,
     CFI_AMD_CMD_COMMAND_SET_EXIT                = 0x90,
+    CFI_AMD_CMD_UNLOCK_BYPASS_RESET             = 0x90,
     CFI_AMD_CMD_CFI_QUERY                       = 0x98,
     CFI_AMD_CMD_PROGRAM                         = 0xA0,
     CFI_AMD_CMD_UNLOCK1                         = 0xAA,
     CFI_AMD_CMD_ERASE_SUSPEND                   = 0xB0,
+    CFI_AMD_CMD_PROGRAM_SUSPEND                 = 0xB0,
     CFI_AMD_CMD_PPB_ENTRY                       = 0xC0,
     CFI_AMD_CMD_READ_CONFIGURATION_REGISTER     = 0xC6,
     CFI_AMD_CMD_SET_CONFIGURATION_REGISTER      = 0xD0,
@@ -83,18 +102,25 @@ enum CFIAmdMode {
     CFI_AMD_MODE_AUTOSELECT,
     CFI_AMD_MODE_CFI_QUERY,
     CFI_AMD_MODE_SECSI_SECTOR,
+    CFI_AMD_MODE_CONFIGURATION,
     CFI_AMD_MODE_DYB,
     CFI_AMD_MODE_PPB,
+    CFI_AMD_MODE_PPB_LOCK,
+    CFI_AMD_MODE_LOCK_REGISTER,
+    CFI_AMD_MODE_PASSWORD,
 };
 
 enum CFIAmdPending {
     CFI_AMD_PENDING_NONE,
-    CFI_AMD_PENDING_PROGRAM,
     CFI_AMD_PENDING_BUFFER_COUNT,
     CFI_AMD_PENDING_BUFFER_LOAD,
     CFI_AMD_PENDING_BUFFER_CONFIRM,
     CFI_AMD_PENDING_COMMAND_SET_PROGRAM,
     CFI_AMD_PENDING_COMMAND_SET_EXIT,
+    CFI_AMD_PENDING_SET_CONFIGURATION,
+    CFI_AMD_PENDING_PPB_ERASE,
+    CFI_AMD_PENDING_PASSWORD_UNLOCK,
+    CFI_AMD_PENDING_UNLOCK_BYPASS_RESET,
 };
 
 enum CFIAmdOperation {
@@ -114,9 +140,15 @@ struct CFIAmdPart {
     bool toggle;
     QEMUTimer *timer;
 
+    bool unlock_bypass;
+    bool *dyb_protected;
+    bool *ppb_protected;
+
     CFIFlashBlock *erase_block;
     bool erase_suspended;
     int64_t erase_remaining_ns;
+    bool program_suspended;
+    int64_t program_remaining_ns;
 
     CFIFlashBlock *buffer_block;
     uint32_t buffer_page;
@@ -128,21 +160,33 @@ struct CFIAmdState {
     bool address_sensitive_unlock;
     bool erase_suspend;
     uint8_t unlock_cycles;
+    bool program_setup;
     bool erase_setup;
+
+    uint16_t configuration;
+    uint16_t lock_register;
+    bool ppb_lock;
+    uint16_t password[CFI_AMD_PASSWORD_WORDS];
+    uint16_t password_entered[CFI_AMD_PASSWORD_WORDS];
+    uint8_t password_unlock_cycle;
 };
 
 static const char *const CFI_AMD_MODE_NAMES[] = {
-    [CFI_AMD_MODE_READ_ARRAY]   = "read array",
-    [CFI_AMD_MODE_AUTOSELECT]   = "autoselect",
-    [CFI_AMD_MODE_CFI_QUERY]    = "CFI query",
-    [CFI_AMD_MODE_SECSI_SECTOR] = "SecSi sector",
-    [CFI_AMD_MODE_DYB]          = "DYB",
-    [CFI_AMD_MODE_PPB]          = "PPB",
+    [CFI_AMD_MODE_READ_ARRAY]       = "read array",
+    [CFI_AMD_MODE_AUTOSELECT]       = "autoselect",
+    [CFI_AMD_MODE_CFI_QUERY]        = "CFI query",
+    [CFI_AMD_MODE_SECSI_SECTOR]     = "SecSi sector",
+    [CFI_AMD_MODE_CONFIGURATION]    = "configuration register",
+    [CFI_AMD_MODE_DYB]              = "DYB",
+    [CFI_AMD_MODE_PPB]              = "PPB",
+    [CFI_AMD_MODE_PPB_LOCK]         = "PPB lock",
+    [CFI_AMD_MODE_LOCK_REGISTER]    = "lock register",
+    [CFI_AMD_MODE_PASSWORD]         = "password",
 };
 
 static void cfi_amd_update_read_array(CFIAmdPart *ap) {
     ap->parent.read_array = ap->mode == CFI_AMD_MODE_READ_ARRAY && ap->operation == CFI_AMD_OPERATION_NONE &&
-        !ap->erase_suspended;
+        !ap->erase_suspended && !ap->program_suspended;
 }
 
 static void cfi_amd_set_mode(CFIAmdPart *ap, CFIAmdMode mode) {
@@ -208,7 +252,7 @@ static uint16_t cfi_amd_read_status(CFIAmdPart *ap, uint32_t offset) {
 
         case CFI_AMD_OPERATION_ERASE: {
             uint16_t toggle_bits = CFI_AMD_STATUS_TOGGLE;
-            if (cfi_amd_block_contains(p, ap->erase_block, offset))
+            if (!ap->erase_block || cfi_amd_block_contains(p, ap->erase_block, offset))
                 toggle_bits |= CFI_AMD_STATUS_ERASE_TOGGLE;
             return CFI_AMD_STATUS_ERASE_STARTED | cfi_amd_toggle(ap, toggle_bits);
         }
@@ -234,8 +278,15 @@ static uint16_t cfi_amd_read_autoselect(CFIAmdPart *ap, uint32_t offset) {
         case CFI_AMD_AUTOSELECT_SECTOR_PROTECTION:
             return cfi_flash_part_find_block(p, offset)->protected;
 
-        case CFI_AMD_AUTOSELECT_INDICATOR_BITS:
-            return flash->chip->indicator_bits;
+        case CFI_AMD_AUTOSELECT_INDICATOR_BITS: {
+            CFIAmdState *chip_state = flash->cmdset_state;
+            uint16_t indicator = flash->chip->indicator_bits & ~CFI_AMD_INDICATOR_CUSTOMER_LOCKED;
+            if (!flash->dyb_protected)
+                indicator |= CFI_AMD_INDICATOR_DYB_UNLOCKED;
+            if (!(chip_state->lock_register & CFI_AMD_LOCK_CUSTOMER_SECSI))
+                indicator |= CFI_AMD_INDICATOR_CUSTOMER_LOCKED;
+            return indicator;
+        }
 
         case CFI_AMD_AUTOSELECT_DEVICE2:
             return flash->pid[1];
@@ -265,9 +316,37 @@ static bool cfi_amd_secsi_find(CFIFlashState *flash, uint32_t offset, uint16_t *
     return false;
 }
 
+static void cfi_amd_update_protection(CFIAmdPart *ap, uint32_t index) {
+    ap->parent.blocks[index].protected = ap->dyb_protected[index] || ap->ppb_protected[index];
+}
+
+static uint16_t cfi_amd_read_lock_register(CFIAmdPart *ap, uint32_t offset) {
+    CFIFlashPart *p = &ap->parent;
+    CFIAmdState *chip_state = p->flash->cmdset_state;
+    uint16_t index = (offset >> 1) & CFI_INDEX_MASK;
+
+    if (index != CFI_AMD_LOCK_REGISTER_WORD) {
+        DEBUG_UNIMP(&p->flash->dbg, "<%d> lock register mode read %02X\n", p->n, index);
+        return 0;
+    }
+    return chip_state->lock_register;
+}
+
+static uint16_t cfi_amd_read_password(CFIAmdPart *ap, uint32_t offset) {
+    CFIFlashPart *p = &ap->parent;
+    CFIAmdState *chip_state = p->flash->cmdset_state;
+
+    if (!(chip_state->lock_register & CFI_AMD_LOCK_PASSWORD_MODE)) {
+        DEBUG_UNIMP(&p->flash->dbg, "<%d> password read after the password mode lock\n", p->n);
+        return 0;
+    }
+    return chip_state->password[(offset >> 1) & CFI_AMD_PASSWORD_INDEX_MASK];
+}
+
 static uint64_t cfi_amd_read(CFIFlashPart *p, uint32_t offset, uint32_t size) {
     CFIAmdPart *ap = container_of(p, CFIAmdPart, parent);
     CFIFlashState *flash = p->flash;
+    CFIAmdState *chip_state = flash->cmdset_state;
 
     if (ap->operation != CFI_AMD_OPERATION_NONE)
         return cfi_amd_read_status(ap, offset);
@@ -298,11 +377,27 @@ static uint64_t cfi_amd_read(CFIFlashPart *p, uint32_t offset, uint32_t size) {
             return cfi_flash_array_read(p, offset, size);
         }
 
-        case CFI_AMD_MODE_DYB:
-            return cfi_flash_part_find_block(p, offset)->protected ? 0 : CFI_AMD_DYB_UNPROTECTED;
+        case CFI_AMD_MODE_CONFIGURATION:
+            return chip_state->configuration;
 
-        case CFI_AMD_MODE_PPB:
-            return CFI_AMD_PPB_UNPROTECTED;
+        case CFI_AMD_MODE_DYB: {
+            uint32_t index = cfi_flash_part_find_block(p, offset) - p->blocks;
+            return ap->dyb_protected[index] ? 0 : CFI_AMD_PROTECTION_CLEAR;
+        }
+
+        case CFI_AMD_MODE_PPB: {
+            uint32_t index = cfi_flash_part_find_block(p, offset) - p->blocks;
+            return ap->ppb_protected[index] ? 0 : CFI_AMD_PROTECTION_CLEAR;
+        }
+
+        case CFI_AMD_MODE_PPB_LOCK:
+            return chip_state->ppb_lock ? 0 : CFI_AMD_PROTECTION_CLEAR;
+
+        case CFI_AMD_MODE_LOCK_REGISTER:
+            return cfi_amd_read_lock_register(ap, offset);
+
+        case CFI_AMD_MODE_PASSWORD:
+            return cfi_amd_read_password(ap, offset);
     }
     g_assert_not_reached();
 }
@@ -310,10 +405,12 @@ static uint64_t cfi_amd_read(CFIFlashPart *p, uint32_t offset, uint32_t size) {
 static void cfi_amd_secsi_program(CFIAmdPart *ap, uint16_t *otp_data, uint32_t data_index, uint16_t value) {
     CFIFlashPart *p = &ap->parent;
     CFIFlashState *flash = p->flash;
-    uint16_t lock_bit = otp_data == flash->otp0_data ?
-        CFI_AMD_INDICATOR_FACTORY_LOCKED : CFI_AMD_INDICATOR_CUSTOMER_LOCKED;
+    CFIAmdState *chip_state = flash->cmdset_state;
+    bool locked = otp_data == flash->otp0_data ?
+        (flash->chip->indicator_bits & CFI_AMD_INDICATOR_FACTORY_LOCKED) != 0 :
+        (chip_state->lock_register & CFI_AMD_LOCK_CUSTOMER_SECSI) == 0;
 
-    if (flash->chip->indicator_bits & lock_bit) {
+    if (locked) {
         DEBUG_LOG(&flash->dbg, "<%d> program in a locked SecSi region ignored\n", p->n);
         return;
     }
@@ -326,7 +423,6 @@ static void cfi_amd_secsi_program(CFIAmdPart *ap, uint16_t *otp_data, uint32_t d
 static void cfi_amd_program_word(CFIAmdPart *ap, uint32_t offset, uint16_t value) {
     CFIFlashPart *p = &ap->parent;
 
-    ap->pending = CFI_AMD_PENDING_NONE;
     uint16_t *otp_data;
     uint32_t data_index;
     if (ap->mode == CFI_AMD_MODE_SECSI_SECTOR && cfi_amd_secsi_find(p->flash, offset, &otp_data, &data_index)) {
@@ -404,6 +500,11 @@ static void cfi_amd_buffer_write(CFIAmdPart *ap, uint32_t offset, uint16_t value
             }
             DEBUG_LOG(&p->flash->dbg, "<%d> program buffer to flash at page %08X\n", p->n,
                 p->flash->offset + ap->buffer_page);
+            if (ap->erase_suspended && ap->buffer_block == ap->erase_block) {
+                DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> buffer program in the erase-suspended sector\n", p->n);
+                ap->pending = CFI_AMD_PENDING_NONE;
+                return;
+            }
             if (ap->buffer_block->protected) {
                 DEBUG_LOG(&p->flash->dbg, "<%d> program in a protected sector ignored\n", p->n);
                 ap->pending = CFI_AMD_PENDING_NONE;
@@ -458,38 +559,240 @@ static void cfi_amd_erase_resume(CFIAmdPart *ap) {
     cfi_amd_start_operation(ap, CFI_AMD_OPERATION_ERASE, 0, MAX(ap->erase_remaining_ns, 0));
 }
 
+static void cfi_amd_chip_erase(CFIAmdPart *ap) {
+    CFIFlashState *flash = ap->parent.flash;
+
+    DEBUG_LOG(&flash->dbg, "<%d> chip erase\n", ap->parent.n);
+    for (uint32_t i = 0; i < flash->parts_n; i++) {
+        CFIAmdPart *part = container_of(flash->parts[i], CFIAmdPart, parent);
+        if (part->erase_suspended) {
+            DEBUG_GUEST_ERROR(&flash->dbg, "<%d> chip erase during erase suspend\n", ap->parent.n);
+            return;
+        }
+    }
+
+    uint32_t erased_blocks = 0;
+    for (uint32_t i = 0; i < flash->parts_n; i++) {
+        CFIFlashPart *p = flash->parts[i];
+        for (uint32_t j = 0; j < p->blocks_n; j++) {
+            if (cfi_flash_erase_block(p, &p->blocks[j]) == CFI_FLASH_OK)
+                erased_blocks++;
+        }
+    }
+
+    int64_t duration_ns = (int64_t) erased_blocks * flash->block_erase_typical_ms * SCALE_MS;
+    for (uint32_t i = 0; i < flash->parts_n; i++) {
+        CFIAmdPart *part = container_of(flash->parts[i], CFIAmdPart, parent);
+        part->erase_block = NULL;
+        cfi_amd_start_operation(part, CFI_AMD_OPERATION_ERASE, 0, duration_ns);
+    }
+}
+
+static void cfi_amd_program_suspend(CFIAmdPart *ap) {
+    CFIFlashPart *p = &ap->parent;
+
+    DEBUG_LOG(&p->flash->dbg, "<%d> program suspend\n", p->n);
+    ap->program_remaining_ns = timer_expire_time_ns(ap->timer) - qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    timer_del(ap->timer);
+    ap->operation = CFI_AMD_OPERATION_NONE;
+    ap->program_suspended = true;
+    cfi_amd_update_read_array(ap);
+}
+
+static void cfi_amd_program_resume(CFIAmdPart *ap) {
+    CFIFlashPart *p = &ap->parent;
+
+    DEBUG_LOG(&p->flash->dbg, "<%d> program resume\n", p->n);
+    ap->program_suspended = false;
+    cfi_amd_start_operation(ap, CFI_AMD_OPERATION_PROGRAM, ap->polling_data, MAX(ap->program_remaining_ns, 0));
+}
+
 static void cfi_amd_dyb_write(CFIAmdPart *ap, uint32_t offset, uint16_t value) {
     CFIFlashPart *p = &ap->parent;
     CFIFlashBlock *blk = cfi_flash_part_find_block(p, offset);
+    uint32_t index = blk - p->blocks;
 
     switch (value) {
         case CFI_AMD_CMD_DYB_SET:
-            blk->protected = true;
+            ap->dyb_protected[index] = true;
             break;
 
         case CFI_AMD_CMD_DYB_CLEAR:
-            blk->protected = false;
+            ap->dyb_protected[index] = false;
             break;
 
         default:
             DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> invalid DYB data %04X\n", p->n, value);
             return;
     }
+    cfi_amd_update_protection(ap, index);
     DEBUG_LOG(&p->flash->dbg, "<%d> DYB %08X: %s\n", p->n, p->flash->offset + p->offset + blk->offset,
-        blk->protected ? "protected" : "unprotected");
+        ap->dyb_protected[index] ? "protected" : "unprotected");
+}
+
+static void cfi_amd_ppb_program(CFIAmdPart *ap, uint32_t offset, uint16_t value) {
+    CFIFlashPart *p = &ap->parent;
+    CFIAmdState *chip_state = p->flash->cmdset_state;
+    CFIFlashBlock *blk = cfi_flash_part_find_block(p, offset);
+    uint32_t index = blk - p->blocks;
+
+    if (value != CFI_AMD_CMD_PPB_PROGRAM) {
+        DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> invalid PPB program data %04X\n", p->n, value);
+        return;
+    }
+    if (chip_state->ppb_lock) {
+        DEBUG_LOG(&p->flash->dbg, "<%d> PPB program with the PPB lock bit set ignored\n", p->n);
+        return;
+    }
+    DEBUG_LOG(&p->flash->dbg, "<%d> PPB %08X: protected\n", p->n, p->flash->offset + p->offset + blk->offset);
+    ap->ppb_protected[index] = true;
+    cfi_amd_update_protection(ap, index);
+    cfi_amd_start_operation(ap, CFI_AMD_OPERATION_PROGRAM, value,
+        (int64_t) p->flash->word_program_typical_us * SCALE_US);
+}
+
+static void cfi_amd_ppb_erase_all(CFIAmdPart *ap) {
+    CFIFlashState *flash = ap->parent.flash;
+    CFIAmdState *chip_state = flash->cmdset_state;
+
+    if (chip_state->ppb_lock) {
+        DEBUG_LOG(&flash->dbg, "<%d> all PPB erase with the PPB lock bit set ignored\n", ap->parent.n);
+        return;
+    }
+    DEBUG_LOG(&flash->dbg, "<%d> all PPB erase\n", ap->parent.n);
+    for (uint32_t i = 0; i < flash->parts_n; i++) {
+        CFIAmdPart *part = container_of(flash->parts[i], CFIAmdPart, parent);
+        for (uint32_t j = 0; j < part->parent.blocks_n; j++) {
+            part->ppb_protected[j] = false;
+            cfi_amd_update_protection(part, j);
+        }
+    }
+    cfi_amd_start_operation(ap, CFI_AMD_OPERATION_PROGRAM, 0, (int64_t) flash->block_erase_typical_ms * SCALE_MS);
+}
+
+static void cfi_amd_lock_register_program(CFIAmdPart *ap, uint16_t value) {
+    CFIFlashPart *p = &ap->parent;
+    CFIAmdState *chip_state = p->flash->cmdset_state;
+    uint16_t lock_register = chip_state->lock_register & value;
+
+    if ((lock_register & CFI_AMD_LOCK_MODE_BITS) == 0) {
+        DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> lock register program of both protection modes aborted\n", p->n);
+        return;
+    }
+    DEBUG_LOG(&p->flash->dbg, "<%d> lock register: %04X\n", p->n, lock_register);
+    chip_state->lock_register = lock_register;
+    cfi_amd_start_operation(ap, CFI_AMD_OPERATION_PROGRAM, value,
+        (int64_t) p->flash->word_program_typical_us * SCALE_US);
+}
+
+static void cfi_amd_ppb_lock_set(CFIAmdPart *ap, uint16_t value) {
+    CFIFlashPart *p = &ap->parent;
+    CFIAmdState *chip_state = p->flash->cmdset_state;
+
+    if (value != CFI_AMD_CMD_PPB_LOCK_BIT_SET) {
+        DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> invalid PPB lock bit data %04X\n", p->n, value);
+        return;
+    }
+    DEBUG_LOG(&p->flash->dbg, "<%d> PPB lock bit set\n", p->n);
+    chip_state->ppb_lock = true;
+}
+
+static void cfi_amd_password_program(CFIAmdPart *ap, uint32_t offset, uint16_t value) {
+    CFIFlashPart *p = &ap->parent;
+    CFIAmdState *chip_state = p->flash->cmdset_state;
+    uint32_t index = (offset >> 1) & CFI_AMD_PASSWORD_INDEX_MASK;
+
+    if (!(chip_state->lock_register & CFI_AMD_LOCK_PASSWORD_MODE)) {
+        DEBUG_LOG(&p->flash->dbg, "<%d> password program after the password mode lock ignored\n", p->n);
+        return;
+    }
+    chip_state->password[index] &= value;
+    DEBUG_LOG(&p->flash->dbg, "<%d> password word %u: %04X\n", p->n, index, chip_state->password[index]);
+    cfi_amd_start_operation(ap, CFI_AMD_OPERATION_PROGRAM, value,
+        (int64_t) p->flash->word_program_typical_us * SCALE_US);
+}
+
+static void cfi_amd_password_unlock_write(CFIAmdPart *ap, uint32_t offset, uint16_t value) {
+    CFIFlashPart *p = &ap->parent;
+    CFIAmdState *chip_state = p->flash->cmdset_state;
+    uint8_t cycle = chip_state->password_unlock_cycle++;
+
+    if (cycle == 0) {
+        if (value != CFI_AMD_CMD_PASSWORD_UNLOCK_WORD_COUNT) {
+            DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> invalid password unlock word count %04X\n", p->n, value);
+            ap->pending = CFI_AMD_PENDING_NONE;
+        }
+        return;
+    }
+    if (cycle <= CFI_AMD_PASSWORD_WORDS) {
+        chip_state->password_entered[(offset >> 1) & CFI_AMD_PASSWORD_INDEX_MASK] = value;
+        return;
+    }
+
+    ap->pending = CFI_AMD_PENDING_NONE;
+    if (value != CFI_AMD_CMD_PASSWORD_UNLOCK_CONFIRM) {
+        DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> invalid password unlock confirm %04X\n", p->n, value);
+        return;
+    }
+    bool password_mode = (chip_state->lock_register & CFI_AMD_LOCK_PASSWORD_MODE) == 0;
+    bool matches = memcmp(chip_state->password_entered, chip_state->password, sizeof(chip_state->password)) == 0;
+    DEBUG_LOG(&p->flash->dbg, "<%d> password unlock: %s\n", p->n, password_mode && matches ? "done" : "rejected");
+    if (password_mode && matches)
+        chip_state->ppb_lock = false;
+}
+
+static void cfi_amd_command_set_program(CFIAmdPart *ap, uint32_t offset, uint16_t value) {
+    switch (ap->mode) {
+        case CFI_AMD_MODE_DYB:
+            cfi_amd_dyb_write(ap, offset, value);
+            break;
+
+        case CFI_AMD_MODE_PPB:
+            cfi_amd_ppb_program(ap, offset, value);
+            break;
+
+        case CFI_AMD_MODE_PPB_LOCK:
+            cfi_amd_ppb_lock_set(ap, value);
+            break;
+
+        case CFI_AMD_MODE_LOCK_REGISTER:
+            cfi_amd_lock_register_program(ap, value);
+            break;
+
+        case CFI_AMD_MODE_PASSWORD:
+            cfi_amd_password_program(ap, offset, value);
+            break;
+
+        default:
+            g_assert_not_reached();
+    }
 }
 
 static bool cfi_amd_command_set_write(CFIAmdPart *ap, uint32_t offset, uint16_t value) {
     CFIFlashPart *p = &ap->parent;
+    CFIAmdState *chip_state = p->flash->cmdset_state;
 
-    if (ap->pending == CFI_AMD_PENDING_COMMAND_SET_PROGRAM) {
-        ap->pending = CFI_AMD_PENDING_NONE;
-        if (ap->mode == CFI_AMD_MODE_DYB) {
-            cfi_amd_dyb_write(ap, offset, value);
-        } else {
-            DEBUG_UNIMP(&p->flash->dbg, "<%d> PPB program at %08X\n", p->n, p->flash->offset + offset);
-        }
-        return true;
+    switch (ap->pending) {
+        case CFI_AMD_PENDING_COMMAND_SET_PROGRAM:
+            ap->pending = CFI_AMD_PENDING_NONE;
+            cfi_amd_command_set_program(ap, offset, value);
+            return true;
+
+        case CFI_AMD_PENDING_PPB_ERASE:
+            ap->pending = CFI_AMD_PENDING_NONE;
+            if (value == CFI_AMD_CMD_ALL_PPB_ERASE) {
+                cfi_amd_ppb_erase_all(ap);
+            } else {
+                DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> invalid all PPB erase command %04X\n", p->n, value);
+            }
+            return true;
+
+        case CFI_AMD_PENDING_PASSWORD_UNLOCK:
+            cfi_amd_password_unlock_write(ap, offset, value);
+            return true;
+
+        default:
+            break;
     }
 
     switch (value) {
@@ -499,6 +802,36 @@ static bool cfi_amd_command_set_write(CFIAmdPart *ap, uint32_t offset, uint16_t 
 
         case CFI_AMD_CMD_PROGRAM:
             ap->pending = CFI_AMD_PENDING_COMMAND_SET_PROGRAM;
+            return true;
+
+        case CFI_AMD_CMD_ERASE_SETUP:
+            if (ap->mode != CFI_AMD_MODE_PPB)
+                return false;
+            ap->pending = CFI_AMD_PENDING_PPB_ERASE;
+            return true;
+
+        case CFI_AMD_CMD_PASSWORD_UNLOCK:
+            if (ap->mode != CFI_AMD_MODE_PASSWORD)
+                return false;
+            chip_state->password_unlock_cycle = 0;
+            ap->pending = CFI_AMD_PENDING_PASSWORD_UNLOCK;
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+static bool cfi_amd_unlock_bypass_write(CFIAmdPart *ap, uint16_t value) {
+    CFIAmdState *chip_state = ap->parent.flash->cmdset_state;
+
+    switch (value) {
+        case CFI_AMD_CMD_PROGRAM:
+            chip_state->program_setup = true;
+            return true;
+
+        case CFI_AMD_CMD_UNLOCK_BYPASS_RESET:
+            ap->pending = CFI_AMD_PENDING_UNLOCK_BYPASS_RESET;
             return true;
 
         default:
@@ -528,7 +861,7 @@ static void cfi_amd_unlocked_command(CFIAmdPart *ap, uint32_t offset, uint16_t v
         if (value == CFI_AMD_CMD_SECTOR_ERASE) {
             cfi_amd_sector_erase(ap, offset);
         } else if (value == CFI_AMD_CMD_CHIP_ERASE && at_unlock1_addr) {
-            DEBUG_UNIMP(&flash->dbg, "<%d> chip erase\n", p->n);
+            cfi_amd_chip_erase(ap);
         } else {
             DEBUG_GUEST_ERROR(&flash->dbg, "<%d> invalid erase command %04X at %08X\n", p->n, value,
                 flash->offset + offset);
@@ -537,10 +870,6 @@ static void cfi_amd_unlocked_command(CFIAmdPart *ap, uint32_t offset, uint16_t v
     }
 
     if (value == CFI_AMD_CMD_WRITE_TO_BUFFER) {
-        if (ap->erase_suspended) {
-            DEBUG_UNIMP(&flash->dbg, "<%d> write to buffer during erase suspend\n", p->n);
-            return;
-        }
         cfi_amd_buffer_start(ap, offset);
         return;
     }
@@ -565,7 +894,7 @@ static void cfi_amd_unlocked_command(CFIAmdPart *ap, uint32_t offset, uint16_t v
             break;
 
         case CFI_AMD_CMD_PROGRAM:
-            ap->pending = CFI_AMD_PENDING_PROGRAM;
+            chip_state->program_setup = true;
             break;
 
         case CFI_AMD_CMD_ERASE_SETUP:
@@ -588,13 +917,29 @@ static void cfi_amd_unlocked_command(CFIAmdPart *ap, uint32_t offset, uint16_t v
             cfi_amd_set_mode(ap, CFI_AMD_MODE_PPB);
             break;
 
-        case CFI_AMD_CMD_UNLOCK_BYPASS_ENTRY:
-        case CFI_AMD_CMD_LOCK_REGISTER_ENTRY:
         case CFI_AMD_CMD_GLOBAL_PPB_LOCK_ENTRY:
+            cfi_amd_set_mode(ap, CFI_AMD_MODE_PPB_LOCK);
+            break;
+
+        case CFI_AMD_CMD_LOCK_REGISTER_ENTRY:
+            cfi_amd_set_mode(ap, CFI_AMD_MODE_LOCK_REGISTER);
+            break;
+
         case CFI_AMD_CMD_PASSWORD_PROTECTION_ENTRY:
+            cfi_amd_set_mode(ap, CFI_AMD_MODE_PASSWORD);
+            break;
+
         case CFI_AMD_CMD_READ_CONFIGURATION_REGISTER:
+            cfi_amd_set_mode(ap, CFI_AMD_MODE_CONFIGURATION);
+            break;
+
         case CFI_AMD_CMD_SET_CONFIGURATION_REGISTER:
-            DEBUG_UNIMP(&flash->dbg, "<%d> command %04X\n", p->n, value);
+            ap->pending = CFI_AMD_PENDING_SET_CONFIGURATION;
+            break;
+
+        case CFI_AMD_CMD_UNLOCK_BYPASS_ENTRY:
+            DEBUG_LOG(&flash->dbg, "<%d> unlock bypass\n", p->n);
+            ap->unlock_bypass = true;
             break;
 
         default:
@@ -632,6 +977,11 @@ static void cfi_amd_write(CFIFlashPart *p, uint32_t offset, uint64_t value64, ui
     CFIAmdState *chip_state = flash->cmdset_state;
     uint16_t value = value64;
 
+    if (size == 4) {
+        cfi_amd_write(p, offset, value64 & 0xFFFF, 2);
+        cfi_amd_write(p, offset + 2, value64 >> 16, 2);
+        return;
+    }
     if (size != 2) {
         DEBUG_GUEST_ERROR(&flash->dbg, "<%d> %u-byte write %08"PRIX64" at %08X\n", p->n, size, value64,
             flash->offset + offset);
@@ -640,11 +990,15 @@ static void cfi_amd_write(CFIFlashPart *p, uint32_t offset, uint64_t value64, ui
 
     switch (ap->operation) {
         case CFI_AMD_OPERATION_PROGRAM:
-            DEBUG_LOG(&flash->dbg, "<%d> write %04X during program ignored\n", p->n, value);
+            if (value == CFI_AMD_CMD_PROGRAM_SUSPEND) {
+                cfi_amd_program_suspend(ap);
+            } else {
+                DEBUG_LOG(&flash->dbg, "<%d> write %04X during program ignored\n", p->n, value);
+            }
             return;
 
         case CFI_AMD_OPERATION_ERASE:
-            if (value == CFI_AMD_CMD_ERASE_SUSPEND && chip_state->erase_suspend) {
+            if (value == CFI_AMD_CMD_ERASE_SUSPEND && chip_state->erase_suspend && ap->erase_block) {
                 cfi_amd_erase_suspend(ap);
             } else {
                 DEBUG_LOG(&flash->dbg, "<%d> write %04X during erase ignored\n", p->n, value);
@@ -656,11 +1010,13 @@ static void cfi_amd_write(CFIFlashPart *p, uint32_t offset, uint64_t value64, ui
             break;
     }
 
-    switch (ap->pending) {
-        case CFI_AMD_PENDING_PROGRAM:
-            cfi_amd_program_word(ap, offset, value);
-            return;
+    if (chip_state->program_setup) {
+        chip_state->program_setup = false;
+        cfi_amd_program_word(ap, offset, value);
+        return;
+    }
 
+    switch (ap->pending) {
         case CFI_AMD_PENDING_BUFFER_COUNT:
         case CFI_AMD_PENDING_BUFFER_LOAD:
         case CFI_AMD_PENDING_BUFFER_CONFIRM:
@@ -675,12 +1031,36 @@ static void cfi_amd_write(CFIFlashPart *p, uint32_t offset, uint64_t value64, ui
             }
             return;
 
+        case CFI_AMD_PENDING_SET_CONFIGURATION:
+            DEBUG_LOG(&flash->dbg, "<%d> configuration register: %04X\n", p->n, value);
+            chip_state->configuration = value;
+            ap->pending = CFI_AMD_PENDING_NONE;
+            return;
+
+        case CFI_AMD_PENDING_UNLOCK_BYPASS_RESET:
+            ap->pending = CFI_AMD_PENDING_NONE;
+            if (value == CFI_AMD_CMD_UNLOCK_BYPASS_RESET_CONFIRM) {
+                DEBUG_LOG(&flash->dbg, "<%d> unlock bypass reset\n", p->n);
+                ap->unlock_bypass = false;
+            }
+            return;
+
         default:
             break;
     }
 
-    bool command_set_mode = ap->mode == CFI_AMD_MODE_DYB || ap->mode == CFI_AMD_MODE_PPB;
+    bool command_set_mode = (
+        ap->mode == CFI_AMD_MODE_DYB ||
+        ap->mode == CFI_AMD_MODE_PPB ||
+        ap->mode == CFI_AMD_MODE_PPB_LOCK ||
+        ap->mode == CFI_AMD_MODE_LOCK_REGISTER ||
+        ap->mode == CFI_AMD_MODE_PASSWORD
+    );
     if (command_set_mode && cfi_amd_command_set_write(ap, offset, value))
+        return;
+
+    bool unlock_bypass_ready = ap->unlock_bypass && ap->mode == CFI_AMD_MODE_READ_ARRAY;
+    if (unlock_bypass_ready && cfi_amd_unlock_bypass_write(ap, value))
         return;
 
     if (chip_state->unlock_cycles == 2) {
@@ -701,6 +1081,10 @@ static void cfi_amd_write(CFIFlashPart *p, uint32_t offset, uint64_t value64, ui
         cfi_amd_unlock_addr_is(chip_state, offset, CFI_AMD_UNLOCK1_ADDR);
     if (query_command && query_allowed) {
         cfi_amd_set_mode(ap, CFI_AMD_MODE_CFI_QUERY);
+        return;
+    }
+    if (value == CFI_AMD_CMD_PROGRAM_RESUME && ap->program_suspended) {
+        cfi_amd_program_resume(ap);
         return;
     }
     if (value == CFI_AMD_CMD_ERASE_RESUME && ap->erase_suspended) {
@@ -799,6 +1183,10 @@ static bool cfi_amd_decode_pri(CFIFlashState *flash) {
     CFIAmdState *chip_state = g_new0(CFIAmdState, 1);
     chip_state->address_sensitive_unlock = (unlock_and_technology & CFI_AMD_PRI_ADDRESS_INSENSITIVE_UNLOCK) == 0;
     chip_state->erase_suspend = erase_suspend != 0;
+    chip_state->lock_register = UINT16_MAX;
+    if (chip->indicator_bits & CFI_AMD_INDICATOR_CUSTOMER_LOCKED)
+        chip_state->lock_register &= ~CFI_AMD_LOCK_CUSTOMER_SECSI;
+    memset(chip_state->password, 0xFF, sizeof(chip_state->password));
     flash->cmdset_state = chip_state;
 
     if (version == CFI_AMD_PRI_VERSION_1_4) {
@@ -829,25 +1217,33 @@ static void cfi_amd_init(CFIFlashState *flash) {
         CFIAmdPart *ap = container_of(flash->parts[i], CFIAmdPart, parent);
         ap->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, cfi_amd_operation_done, ap);
         ap->buffer = g_malloc(flash->write_buffer_size);
+        ap->dyb_protected = g_new0(bool, flash->parts[i]->blocks_n);
+        ap->ppb_protected = g_new0(bool, flash->parts[i]->blocks_n);
     }
 }
 
 static void cfi_amd_reset(CFIFlashState *flash) {
     CFIAmdState *chip_state = flash->cmdset_state;
-    bool dyb_protected = (flash->chip->indicator_bits & CFI_AMD_INDICATOR_DYB_UNLOCKED) == 0;
 
     chip_state->unlock_cycles = 0;
+    chip_state->program_setup = false;
     chip_state->erase_setup = false;
+    chip_state->configuration = CFI_AMD_CONFIGURATION_DEFAULT;
+    chip_state->ppb_lock = (chip_state->lock_register & CFI_AMD_LOCK_PASSWORD_MODE) == 0;
     for (uint32_t i = 0; i < flash->parts_n; i++) {
         CFIFlashPart *p = flash->parts[i];
         CFIAmdPart *ap = container_of(p, CFIAmdPart, parent);
 
         timer_del(ap->timer);
         ap->operation = CFI_AMD_OPERATION_NONE;
+        ap->unlock_bypass = false;
         ap->erase_block = NULL;
         ap->erase_suspended = false;
-        for (uint32_t j = 0; j < p->blocks_n; j++)
-            p->blocks[j].protected = dyb_protected;
+        ap->program_suspended = false;
+        for (uint32_t j = 0; j < p->blocks_n; j++) {
+            ap->dyb_protected[j] = flash->dyb_protected;
+            cfi_amd_update_protection(ap, j);
+        }
         cfi_amd_set_mode(ap, CFI_AMD_MODE_READ_ARRAY);
     }
 }
