@@ -71,13 +71,28 @@ int64_t cpu_get_ticks(void)
     return ticks;
 }
 
+/*
+ * PMB887X-WEB FEATURE (deterministic clock): the host clock that only the
+ * owner moves, see cpu_clock_set_deterministic().
+ */
+static bool cpu_clock_deterministic;
+static int64_t cpu_clock_deterministic_host;
+
+static int64_t cpu_clock_host(void)
+{
+    if (cpu_clock_deterministic) {
+        return qatomic_read(&cpu_clock_deterministic_host);
+    }
+    return get_clock();
+}
+
 int64_t cpu_get_clock_locked(void)
 {
     int64_t time;
 
     time = timers_state.cpu_clock_offset;
     if (timers_state.cpu_ticks_enabled) {
-        time += get_clock();
+        time += cpu_clock_host();
     }
 
     return time;
@@ -113,6 +128,12 @@ static __thread bool cpu_clock_owner;
 static QemuSeqLock cpu_clock_owner_seq;
 static QemuMutex cpu_clock_owner_lock;
 static int64_t cpu_clock_owner_anchor = INT64_MAX;
+/*
+ * The ps of the anchor's last ns: moving the anchor to the position keeps
+ * them, so the clock does not depend on how often it moves - a kick from
+ * another thread moves it at a host-timed point.
+ */
+static uint32_t cpu_clock_owner_anchor_ps;
 static uint32_t cpu_clock_owner_anchor_cycles;
 static uint32_t *cpu_clock_owner_cycles;
 static uint32_t *cpu_clock_owner_cycle_limit;
@@ -138,9 +159,11 @@ static int64_t cpu_clock_monotonic(int64_t time)
     return last;
 }
 
-static int64_t cpu_clock_cycles_ns(uint32_t cycles, uint32_t cycle_ps)
+/* ps since the anchor's ns */
+static uint64_t cpu_clock_anchor_ps_locked(uint32_t cycles)
 {
-    return (uint64_t)cycles * cycle_ps / 1000;
+    return (uint64_t)(uint32_t)(cycles - cpu_clock_owner_anchor_cycles) *
+           cpu_clock_cycle_ps + cpu_clock_owner_anchor_ps;
 }
 
 static int64_t cpu_clock_position_locked(uint32_t cycles)
@@ -148,9 +171,7 @@ static int64_t cpu_clock_position_locked(uint32_t cycles)
     if (cpu_clock_owner_anchor == INT64_MAX) {
         return INT64_MAX;
     }
-    return cpu_clock_owner_anchor +
-           cpu_clock_cycles_ns(cycles - cpu_clock_owner_anchor_cycles,
-                               cpu_clock_cycle_ps);
+    return cpu_clock_owner_anchor + cpu_clock_anchor_ps_locked(cycles) / 1000;
 }
 
 int64_t cpu_clock_owner_position(void)
@@ -212,6 +233,25 @@ static void cpu_clock_owner_write(int64_t anchor, uint32_t cycles,
 {
     seqlock_write_begin(&cpu_clock_owner_seq);
     cpu_clock_owner_anchor = anchor;
+    cpu_clock_owner_anchor_ps = 0;
+    cpu_clock_owner_anchor_cycles = cycles;
+    cpu_clock_cycle_ps = cycle_ps;
+    seqlock_write_end(&cpu_clock_owner_seq);
+}
+
+/* Move a running clock's anchor to @cycles; @cycle_ps counts from there. */
+static void cpu_clock_owner_reanchor(uint32_t cycles, uint32_t cycle_ps)
+{
+    uint64_t ps;
+
+    if (cpu_clock_owner_anchor == INT64_MAX) {
+        cpu_clock_owner_write(INT64_MAX, cycles, cycle_ps);
+        return;
+    }
+    ps = cpu_clock_anchor_ps_locked(cycles);
+    seqlock_write_begin(&cpu_clock_owner_seq);
+    cpu_clock_owner_anchor += ps / 1000;
+    cpu_clock_owner_anchor_ps = ps % 1000;
     cpu_clock_owner_anchor_cycles = cycles;
     cpu_clock_cycle_ps = cycle_ps;
     seqlock_write_end(&cpu_clock_owner_seq);
@@ -240,15 +280,41 @@ void cpu_clock_set_cpu_hz(uint64_t hz)
     }
     qemu_mutex_lock(&cpu_clock_owner_lock);
     cycles = qatomic_read(counter);
-    cpu_clock_owner_write(cpu_clock_position_locked(cycles), cycles, cycle_ps);
+    cpu_clock_owner_reanchor(cycles, cycle_ps);
     qemu_mutex_unlock(&cpu_clock_owner_lock);
+}
+
+/*
+ * PMB887X-WEB FEATURE (deterministic clock): move the host clock up to
+ * @time, so the others read the owner's position up to there.
+ */
+static void cpu_clock_deterministic_reach(int64_t time)
+{
+    seqlock_write_lock(&timers_state.vm_clock_seqlock,
+                       &timers_state.vm_clock_lock);
+    if (timers_state.cpu_ticks_enabled &&
+        time - timers_state.cpu_clock_offset > cpu_clock_deterministic_host) {
+        qatomic_set(&cpu_clock_deterministic_host,
+                    time - timers_state.cpu_clock_offset);
+    }
+    seqlock_write_unlock(&timers_state.vm_clock_seqlock,
+                         &timers_state.vm_clock_lock);
 }
 
 void cpu_clock_owner_progress(bool idle)
 {
-    int64_t now = cpu_get_clock();
+    int64_t now;
     uint32_t cycles;
 
+    if (idle && cpu_clock_deterministic) {
+        /* the clock stops where the guest stopped */
+        int64_t position = cpu_clock_owner_position();
+
+        if (position != INT64_MAX) {
+            cpu_clock_deterministic_reach(position);
+        }
+    }
+    now = cpu_get_clock();
     qemu_mutex_lock(&cpu_clock_owner_lock);
     cycles = qatomic_read(cpu_clock_owner_cycles);
     if (idle) {
@@ -256,8 +322,7 @@ void cpu_clock_owner_progress(bool idle)
     } else if (cpu_clock_owner_anchor == INT64_MAX) {
         cpu_clock_owner_write(now, cycles, cpu_clock_cycle_ps);
     } else {
-        cpu_clock_owner_write(cpu_clock_position_locked(cycles), cycles,
-                              cpu_clock_cycle_ps);
+        cpu_clock_owner_reanchor(cycles, cpu_clock_cycle_ps);
     }
     qemu_mutex_unlock(&cpu_clock_owner_lock);
 }
@@ -304,6 +369,9 @@ void cpu_clock_owner_idle_advance(int64_t deadline)
     cpu_clock_owner_write(deadline, qatomic_read(cpu_clock_owner_cycles),
                           cpu_clock_cycle_ps);
     qemu_mutex_unlock(&cpu_clock_owner_lock);
+    if (cpu_clock_deterministic) {
+        cpu_clock_deterministic_reach(deadline);
+    }
 }
 
 /*
@@ -322,6 +390,10 @@ int64_t cpu_clock_owner_idle(int64_t deadline)
 {
     int64_t raw = cpu_clock_owner_idle_raw;
 
+    if (cpu_clock_deterministic && deadline >= 0) {
+        cpu_clock_owner_idle_advance(deadline);
+        return 0;
+    }
     if (deadline < 0 || !cpu_clock_idle_lead) {
         cpu_clock_owner_progress(true);
         return deadline < 0 ? -1 :
@@ -347,8 +419,13 @@ int64_t cpu_clock_owner_idle(int64_t deadline)
  */
 bool cpu_clock_owner_idle_reaches(int64_t deadline)
 {
-    if (!qemu_virtual_timers_on_vcpu || !cpu_clock_owner ||
-        !cpu_clock_idle_lead) {
+    if (!qemu_virtual_timers_on_vcpu || !cpu_clock_owner) {
+        return false;
+    }
+    if (cpu_clock_deterministic) {
+        return true;
+    }
+    if (!cpu_clock_idle_lead) {
         return false;
     }
     if (deadline - cpu_clock_owner_idle_raw > cpu_clock_idle_lead) {
@@ -373,6 +450,12 @@ static int64_t cpu_clock_owner_raw_at;
 
 static int64_t cpu_clock_owner_raw(int64_t position)
 {
+    if (cpu_clock_deterministic) {
+        if (position != INT64_MAX) {
+            cpu_clock_deterministic_reach(position);
+        }
+        return cpu_get_raw_clock();
+    }
     if (position != INT64_MAX &&
         cpu_clock_owner_raw_seen - position > CPU_CLOCK_OWNER_LEAD_NS &&
         position - cpu_clock_owner_raw_at < CPU_CLOCK_OWNER_REREAD_NS) {
@@ -428,6 +511,43 @@ static uint32_t cpu_clock_owner_budget(int64_t deadline, int64_t real)
     return MAX(MIN(cycles, CPU_CLOCK_BUDGET_MAX), CPU_CLOCK_BUDGET_MIN);
 }
 
+/*
+ * PMB887X-WEB FEATURE (deterministic clock): the budget's limit is the
+ * first cycle count at which the position reaches the deadline (or the
+ * lead), and no minimum: rounded from where the budget began, or pushed
+ * out to CPU_CLOCK_BUDGET_MIN, the timer would fire at a TB that depends
+ * on when the budget began - on a kick, that is, a host-timed event.
+ */
+static uint32_t cpu_clock_deterministic_limit(int64_t deadline, int64_t real,
+                                              uint32_t now)
+{
+    int64_t until = real + CPU_CLOCK_OWNER_LEAD_NS;
+    uint32_t limit = now + 1;
+
+    if (deadline >= 0) {
+        until = MIN(until, deadline);
+    }
+    qemu_mutex_lock(&cpu_clock_owner_lock);
+    if (cpu_clock_owner_anchor != INT64_MAX &&
+        until > cpu_clock_owner_anchor) {
+        uint64_t cycle_ps = cpu_clock_cycle_ps;
+        uint64_t done = (uint32_t)(now - cpu_clock_owner_anchor_cycles);
+        uint64_t ns = until - cpu_clock_owner_anchor;
+        uint64_t to;
+
+        if (ns > (done + CPU_CLOCK_BUDGET_MAX) * cycle_ps / 1000) {
+            limit = now + CPU_CLOCK_BUDGET_MAX;
+        } else {
+            to = DIV_ROUND_UP(ns * 1000 - cpu_clock_owner_anchor_ps, cycle_ps);
+            if (to > done) {
+                limit = cpu_clock_owner_anchor_cycles + (uint32_t)to;
+            }
+        }
+    }
+    qemu_mutex_unlock(&cpu_clock_owner_lock);
+    return limit;
+}
+
 static void cpu_clock_owner_shorten_budget_at(int64_t real)
 {
     uint32_t *cycles = qatomic_load_acquire(&cpu_clock_owner_cycles);
@@ -439,7 +559,12 @@ static void cpu_clock_owner_shorten_budget_at(int64_t real)
         return;
     }
     deadline = qemu_clock_expire_time_ns(QEMU_CLOCK_VIRTUAL);
-    limit = qatomic_read(cycles) + cpu_clock_owner_budget(deadline, real);
+    if (cpu_clock_deterministic) {
+        limit = cpu_clock_deterministic_limit(deadline, real,
+                                              qatomic_read(cycles));
+    } else {
+        limit = qatomic_read(cycles) + cpu_clock_owner_budget(deadline, real);
+    }
     old = qatomic_read(cycle_limit);
     while ((int32_t)(limit - old) < 0) {
         uint32_t seen = qatomic_cmpxchg(cycle_limit, old, limit);
@@ -470,6 +595,11 @@ void cpu_clock_owner_shorten_budget(void)
             INT64_MAX - CPU_CLOCK_OWNER_LEAD_NS));
 }
 
+void cpu_clock_set_deterministic(void)
+{
+    cpu_clock_deterministic = true;
+}
+
 /* @real: cpu_get_real_clock(), e.g. from cpu_clock_owner_limit_lag() */
 void cpu_clock_owner_start_budget(int64_t real)
 {
@@ -490,7 +620,7 @@ void cpu_enable_ticks(void)
                        &timers_state.vm_clock_lock);
     if (!timers_state.cpu_ticks_enabled) {
         timers_state.cpu_ticks_offset -= cpu_get_host_ticks();
-        timers_state.cpu_clock_offset -= get_clock();
+        timers_state.cpu_clock_offset -= cpu_clock_host();
         timers_state.cpu_ticks_enabled = 1;
     }
     seqlock_write_unlock(&timers_state.vm_clock_seqlock,

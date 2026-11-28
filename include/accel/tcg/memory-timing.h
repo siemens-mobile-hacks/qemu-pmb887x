@@ -41,6 +41,7 @@ typedef struct TCGMemoryTiming {
  */
 void tcg_memory_timing_init(const TCGMemoryTiming *timings, unsigned count);
 void tcg_memory_timing_select(CPUState *cpu, unsigned index);
+void tcg_memory_timing_fetch_off(void);
 uint32_t tcg_memory_timing_cflags(void);
 const TCGMemoryTiming *tcg_memory_timing_get(uint32_t cflags);
 

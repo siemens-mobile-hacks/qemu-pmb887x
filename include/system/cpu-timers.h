@@ -71,6 +71,15 @@ int64_t cpu_get_real_clock(void);
 void cpu_clock_owner_start_budget(int64_t real);
 void cpu_clock_owner_shorten_budget(void);
 
+/*
+ * PMB887X-WEB FEATURE (deterministic clock): real time leaves the clock.
+ * The owner's position stands in for the host clock, a waiting guest's
+ * clock jumps to its next timer (as -icount sleep=off) and budgets end on
+ * the exact cycle a timer is due, so a run depends only on its guest
+ * cycles - and on the I/O threads' input, as under icount.
+ */
+void cpu_clock_set_deterministic(void);
+
 void qemu_timer_notify_cb(void *opaque, QEMUClockType type);
 
 /* get/set VIRTUAL clock and VM elapsed ticks via the cpus accel interface */

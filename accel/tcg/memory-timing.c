@@ -14,6 +14,19 @@ static uint32_t memory_timing_cflags;
 uint32_t tcg_memory_fetch_lines;
 uint32_t tcg_memory_fetch_recent_lines;
 uint32_t tcg_memory_fetch_cache_lines;
+static bool memory_fetch_off;
+
+/*
+ * PMB887X-WEB FEATURE (deterministic clock): lookups charge the I-cache,
+ * and a TB is looked up after every exit - a kick, a timer - and wherever
+ * the backend did not chain to it, so no lookup costs a cycle: a fetch
+ * distance never exceeds UINT32_MAX.
+ */
+void tcg_memory_timing_fetch_off(void)
+{
+    memory_fetch_off = true;
+    tcg_memory_fetch_recent_lines = UINT32_MAX;
+}
 
 void tcg_memory_timing_init(const TCGMemoryTiming *timings, unsigned count)
 {
@@ -27,7 +40,8 @@ void tcg_memory_timing_init(const TCGMemoryTiming *timings, unsigned count)
     if (count) {
         tcg_memory_fetch_cache_lines = timings[0].fetch_cache_bytes /
                                        timings[0].line_bytes;
-        tcg_memory_fetch_recent_lines = timings[0].fetch_recent_lines;
+        tcg_memory_fetch_recent_lines = memory_fetch_off ? UINT32_MAX :
+                                        timings[0].fetch_recent_lines;
     }
     memory_timings = timings;
     memory_timing_count = count;

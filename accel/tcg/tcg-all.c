@@ -48,6 +48,7 @@
 #include "accel/accel-ops.h"
 #include "accel/accel-cpu-ops.h"
 #include "accel/tcg/cpu-ops.h"
+#include "accel/tcg/memory-timing.h"
 #include "internal-common.h"
 
 
@@ -64,6 +65,8 @@ typedef struct TCGState TCGState;
 
 /* vcpu-timers-bank (s) and vcpu-timers-idle-lead (us) */
 static uint32_t tcg_vcpu_timers_bank, tcg_vcpu_timers_idle_lead;
+/* PMB887X-WEB FEATURE (deterministic clock) */
+static bool tcg_vcpu_timers_deterministic;
 
 #define TYPE_TCG_ACCEL ACCEL_CLASS_NAME("tcg")
 
@@ -160,6 +163,13 @@ static int tcg_init_machine(AccelState *as, MachineState *ms)
         qemu_virtual_timers_on_vcpu = true;
         cpu_clock_set_bank(tcg_vcpu_timers_bank * NANOSECONDS_PER_SECOND);
         cpu_clock_set_idle_lead(tcg_vcpu_timers_idle_lead * SCALE_US);
+        if (tcg_vcpu_timers_deterministic) {
+            cpu_clock_set_deterministic();
+            tcg_memory_timing_fetch_off();
+        }
+    } else if (tcg_vcpu_timers_deterministic) {
+        error_report("vcpu-timers-deterministic requires vcpu-timers");
+        return -EINVAL;
     }
 
     if (tcg_cross_page_links && ms->smp.max_cpus > 1) {
@@ -291,6 +301,17 @@ static void tcg_set_vcpu_timers(Object *obj, bool value, Error **errp)
     TCG_STATE(obj)->vcpu_timers = value;
 }
 
+static bool tcg_get_vcpu_timers_deterministic(Object *obj, Error **errp)
+{
+    return tcg_vcpu_timers_deterministic;
+}
+
+static void tcg_set_vcpu_timers_deterministic(Object *obj, bool value,
+                                              Error **errp)
+{
+    tcg_vcpu_timers_deterministic = value;
+}
+
 static bool tcg_get_cross_page_links(Object *obj, Error **errp)
 {
     return tcg_cross_page_links;
@@ -353,6 +374,15 @@ static void tcg_accel_class_init(ObjectClass *oc, const void *data)
         "With vcpu-timers: while the guest waits for an interrupt, run its "
         "timers up to this many microseconds ahead of real time and sleep "
         "once per batch instead of once per timer");
+
+    object_class_property_add_bool(oc, "vcpu-timers-deterministic",
+                                   tcg_get_vcpu_timers_deterministic,
+                                   tcg_set_vcpu_timers_deterministic);
+    object_class_property_set_description(oc, "vcpu-timers-deterministic",
+        "With vcpu-timers: keep real time out of the clock - never wait for "
+        "it, jump to the next timer while the guest waits, end each budget "
+        "on the exact cycle a timer is due - and charge no I-cache misses, "
+        "for runs that repeat exactly (as -icount sleep=off)");
 
     object_class_property_add_bool(oc, "cross-page-links",
                                    tcg_get_cross_page_links,
