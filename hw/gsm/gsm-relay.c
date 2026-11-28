@@ -452,6 +452,8 @@ static void vn_deliver(VNet *n) {
 }
 
 static void vn_cc_mt_setup(VNet *n);
+static void vn_cc_up(VNet *n, uint8_t ev, uint8_t cause);
+static void vn_cc_page_end(VNet *n);
 
 /* MM INFORMATION: full name "Virtual Network", short "Virtual" (GSM 7-bit packed) */
 static const uint8_t VN_MM_INFO[] = { 0x05, 0x32, 0x43, 0x0F, 0x87, 0xD6, 0xB4, 0x9C, 0x5E, 0x0F, 0xB3, 0x41, 0xCE,
@@ -482,7 +484,11 @@ static void vn_l3_mm_rr(VNet *n, const uint8_t *m, size_t len) {
         } else if ((m[2] & 0x0F) == 8) {                    /* supplementary service (USSD) */
             n->mode = VN_SS;
             vn_queue(n, 0, acc, sizeof(acc));
-        } else if ((m[2] & 0x0F) == 1 && n->cc == CC_NULL) {  /* MO call (not emergency) */
+        } else if ((m[2] & 0x0F) == 1 && (n->cc == CC_NULL || n->cc == CC_MT_PAGE)) {  /* MO call (not emergency) */
+            if (n->cc == CC_MT_PAGE) {                      /* the user dialled first: the caller hears busy */
+                vn_cc_up(n, VNB_CC_DISC, 17);
+                vn_cc_page_end(n);
+            }
             n->mode = VN_CALL;
             vn_queue(n, 0, acc, sizeof(acc));
         } else {
@@ -532,10 +538,12 @@ static void vn_l3_sms(VNet *n, const uint8_t *m, size_t len) {
                 n->box.mo_len = rp[i];
                 n->box.mo_seq++;
                 n->box.stats[0]++;
-            } else if (i < rl && i + 1 + rp[i] <= rl && vn_submit_to_deliver(n, &rp[i + 1], rp[i], 0)) {
-                n->sms_pending = true;                      /* no relay: back to the sender */
-                n->sms_tries = 0;
-                n->mt_bridge = false;
+            } else {
+                /* the relay link is down: the SMS fails rather than come back to its sender */
+                uint8_t err[4] = { 0x05, rp[1], 1, 38 };   /* RP-ERROR, network out of order */
+                vn_cp(n, back, 0x01, err, sizeof(err));
+                n->rp_acked = true;
+                return;
             }
             vn_cp(n, back, 0x01, ack, sizeof(ack));         /* CP-DATA (RP-ACK) */
             n->rp_acked = true;
@@ -672,8 +680,10 @@ static void vn_cc_mt_setup(VNet *n) {
     vn_cc_timer(n, CT_NONE, 0);
 }
 
+/* a channel up for something else (an SMS, a location update) is no reason
+ * for busy: paging waits for it to end */
 static void vn_cc_mt(VNet *n, const char *num, uint8_t len, bool bridge) {
-    if (n->active || n->cc != CC_NULL || !n->mi[0]) {
+    if (n->cc != CC_NULL || !n->mi[0]) {
         if (bridge)
             vn_cc_up_raw(n, VNB_CC_DISC, 17);               /* user busy */
         return;
@@ -727,6 +737,13 @@ static void vn_l3_cc(VNet *n, const uint8_t *m, size_t len) {
             }
             i += 2 + m[i + 1];
         }
+        if (!n->box.bridge && !(n->cc_nlen == 3 && !memcmp(n->cc_num, "100", 3))) {
+            /* the relay link is down: refused, not answered by the cell itself */
+            static const uint8_t ie[] = { 0x08, 2, 0xE0, 0x80 | 38 };
+            vn_cc_send(n, 0x2A, ie, sizeof(ie));            /* RELEASE COMPLETE, network out of order */
+            vn_release(n);
+            return;
+        }
         vn_cc_send(n, 0x02, 0, 0);                          /* CALL PROCEEDING */
         vn_cc_assign(n);
         n->cc = CC_MO_PROC;
@@ -734,12 +751,9 @@ static void vn_l3_cc(VNet *n, const uint8_t *m, size_t len) {
         if (n->cc_nlen == 3 && !memcmp(n->cc_num, "100", 3)) {   /* the cell's own test number */
             n->cc_bridge = false;
             vn_cc_timer(n, CT_HANGUP, 1);
-        } else if (n->box.bridge) {
+        } else {
             n->cc_bridge = true;
             vn_cc_up(n, VNB_CC_SETUP, 0);
-        } else {
-            n->cc_bridge = false;                           /* no relay: the cell answers itself */
-            vn_cc_timer(n, CT_ALERT, 2);
         }
         return;
     }
@@ -1280,8 +1294,18 @@ static void br_put(Bridge *b, char type, const uint8_t *p, int n) {
     b->txn += n;
 }
 
+/* a new link starts its framing afresh; the SMS queued for the phone (the
+ * relay charged their senders) and the one being paged stay */
 static void br_connected(Bridge *b) {
+    BrSms dq[BR_DQ];
+    int dh = b->dh, dn = b->dn, waiting = b->waiting;
+
+    memcpy(dq, b->dq, sizeof(dq));
     memset(b, 0, sizeof(*b));
+    memcpy(b->dq, dq, sizeof(dq));
+    b->dh = dh;
+    b->dn = dn;
+    b->waiting = waiting;
     b->up = 1;
 }
 
@@ -1385,6 +1409,7 @@ static void br_poll(Bridge *b, VnBox *box, uint32_t now_ms) {
         br_put(b, 'Q', box->uq, box->uq_len <= VNB_USSD_Q ? box->uq_len : VNB_USSD_Q);
         box->uq_ack = seq;
         b->last_tx_ms = now_ms;
+        b->ua_pending = 0;                  /* an answer that came before the request is a late one */
     }
     if (b->ua_pending) {
         memcpy(box->ua, b->ua, b->ua_len);

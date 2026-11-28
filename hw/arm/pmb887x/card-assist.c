@@ -209,7 +209,8 @@ static void cd_set_goal(int want) {
 	cd_publish();
 }
 
-/* the held insertion: the slot changes under the BQL, on the main loop */
+/* the held insertion: the slot changes under the BQL, on the main loop;
+ * opaque non-NULL: after a reset, which leaves the reading to the new firmware */
 static void cd_insert_bh(void *opaque) {
 	Error *err = NULL;
 
@@ -219,16 +220,20 @@ static void cd_insert_bh(void *opaque) {
 		error_report_err(err);
 		return;
 	}
-	if (cd_ready())
+	if (!opaque && cd_ready())
 		cd_set_goal(CD_WANT_IN);
 	cd_publish();
 }
 
-static void cd_release_insert(void) {
+static void cd_release_insert_as(void *opaque) {
 	if (!cd.insert_waiting)
 		return;
 	cd.insert_waiting = false;
-	aio_bh_schedule_oneshot(qemu_get_aio_context(), cd_insert_bh, NULL);
+	aio_bh_schedule_oneshot(qemu_get_aio_context(), cd_insert_bh, opaque);
+}
+
+static void cd_release_insert(void) {
+	cd_release_insert_as(NULL);
 }
 
 static void cd_goal_done(const char *what) {
@@ -785,6 +790,11 @@ bool pmb887x_card_set_inserted(bool inserted, Error **errp) {
 
 	if (!inserted) {
 		cd.insert_waiting = false;
+		if (cd.unmount) {
+			/* an "Eject card" still to send would reach the next card */
+			cd.unmount = false;
+			qatomic_set(&pmb887x_card_unmount_state, 3);
+		}
 		if (!ca_slot_set(false, errp))
 			return false;
 		cd.present = false;
@@ -860,11 +870,12 @@ static void ca_reset(void *opaque) {
 	cd.want = CD_WANT_NONE;
 	cd.hide = false;
 	cd.timer_wait = false;
+	cd.gave_up = false;
 	if (cd.unmount) {
 		cd.unmount = false;
 		qatomic_set(&pmb887x_card_unmount_state, 3);
 	}
-	cd_release_insert();
+	cd_release_insert_as((void *) 1);
 	cd_publish();
 }
 
