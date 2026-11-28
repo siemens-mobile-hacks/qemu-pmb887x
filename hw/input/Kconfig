@@ -42,3 +42,10 @@ config KEY_SWITCH
 
 config ROTARY_ENCODER
     bool
+
+config SLIDER_SENSOR
+    bool
+
+config SIEMENS_KEYPAD_EXPANDER
+    bool
+    depends on I2C

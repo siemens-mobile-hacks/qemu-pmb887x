@@ -373,7 +373,7 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_machine_t *pmb887x_machine = OBJECT_CHECK(pmb887x_machine_t, machine, TYPE_PMB887X_MACHINE);
 	pmb887x_board_init_devices(ebuc, pmb887x_machine->gsm_network);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
-	pmb887x_board_startup_init(keypad);
+	pmb887x_board_startup_init();
 
 #if PMB887X_IO_BRIDGE
 	pmb8876_io_bridge_set_vic(vic);

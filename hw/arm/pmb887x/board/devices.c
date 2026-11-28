@@ -22,6 +22,7 @@
 #include "hw/i2c/i2c.h"
 #include "hw/misc/phone/accessory-connector.h"
 #include "qapi/error.h"
+#include "system/reset.h"
 
 typedef enum pmb887x_dev_prop_type_t pmb887x_dev_prop_type_t;
 typedef enum pmb887x_dev_bus_type_t pmb887x_dev_bus_type_t;
@@ -121,6 +122,17 @@ static pmb887x_dev_t devices_meta[] = {
 	{
 		.name = "key-matrix",
 		.props = {},
+	},
+	{
+		.name = "siemens-keypad-expander",
+		.props = {},
+	},
+	{
+		.name = "slider-sensor",
+		.props = {
+			{ "open", DEV_PROP_BOOL, false },
+			{ "travel_ms", DEV_PROP_UINT, false },
+		},
 	},
 	{
 		.name = "key-switch",
@@ -394,21 +406,34 @@ struct pmb887x_dev_net_t {
 	DeviceState *wired_and;
 };
 
+static int device_get_out_target_count(toml_datum_t gpio_out_tab, size_t i) {
+	toml_datum_t targets = gpio_out_tab.u.tab.value[i];
+	return targets.type == TOML_ARRAY ? targets.u.arr.size : 1;
+}
+
+static const char *device_get_out_target(toml_datum_t gpio_out_tab, size_t i, int target) {
+	toml_datum_t targets = gpio_out_tab.u.tab.value[i];
+	if (targets.type == TOML_ARRAY)
+		return toml_array_get_string(targets, target, NULL, true);
+	return toml_table_get_string(gpio_out_tab, gpio_out_tab.u.tab.key[i], NULL, true);
+}
+
 static void device_count_net_drivers(GHashTable *nets, toml_datum_t table) {
 	toml_datum_t gpio_out_tab = toml_table_get(table, TOML_TABLE, "out", false);
 	if (gpio_out_tab.type == TOML_UNKNOWN)
 		return;
 
 	for (size_t i = 0; i < gpio_out_tab.u.tab.size; i++) {
-		const char *per_pin_name = toml_table_get_string(gpio_out_tab, gpio_out_tab.u.tab.key[i], NULL, true);
-		qemu_irq input = pmb887x_gpio_get_input(per_pin_name);
-		pmb887x_dev_net_t *net = g_hash_table_lookup(nets, input);
-		if (!net) {
-			net = g_new0(pmb887x_dev_net_t, 1);
-			net->input = input;
-			g_hash_table_insert(nets, input, net);
+		for (int j = 0; j < device_get_out_target_count(gpio_out_tab, i); j++) {
+			qemu_irq input = pmb887x_gpio_get_input(device_get_out_target(gpio_out_tab, i, j));
+			pmb887x_dev_net_t *net = g_hash_table_lookup(nets, input);
+			if (!net) {
+				net = g_new0(pmb887x_dev_net_t, 1);
+				net->input = input;
+				g_hash_table_insert(nets, input, net);
+			}
+			net->drivers++;
 		}
-		net->drivers++;
 	}
 }
 
@@ -436,9 +461,11 @@ static void device_init_gpios_from_config(GHashTable *nets, DeviceState *dev, to
 	if (gpio_out_tab.type != TOML_UNKNOWN) {
 		for (size_t i = 0; i < gpio_out_tab.u.tab.size; i++) {
 			g_autofree char *dev_pin_name = g_strdup_printf("%s:%s", dev->id, gpio_out_tab.u.tab.key[i]);
-			const char *per_pin_name = toml_table_get_string(gpio_out_tab, gpio_out_tab.u.tab.key[i], NULL, true);
-			pmb887x_dev_net_t *net = g_hash_table_lookup(nets, pmb887x_gpio_get_input(per_pin_name));
-			pmb887x_gpio_connect_output(dev_pin_name, device_get_net_driver_input(net));
+			for (int j = 0; j < device_get_out_target_count(gpio_out_tab, i); j++) {
+				qemu_irq input = pmb887x_gpio_get_input(device_get_out_target(gpio_out_tab, i, j));
+				pmb887x_dev_net_t *net = g_hash_table_lookup(nets, input);
+				pmb887x_gpio_connect_output(dev_pin_name, device_get_net_driver_input(net));
+			}
 		}
 	}
 }
@@ -468,6 +495,7 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 			sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 		} else {
 			qdev_realize_and_unref(dev, NULL, &error_fatal);
+			qemu_register_resettable(OBJECT(dev));
 		}
 		return;
 	}

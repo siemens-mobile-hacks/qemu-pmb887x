@@ -5,8 +5,6 @@
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/utils/toml.h"
-#include "hw/core/irq.h"
-#include "hw/core/qdev.h"
 #include "qemu/error-report.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
@@ -38,20 +36,11 @@ static void pmb887x_board_startup_activate(void *opaque) {
 
 	for (size_t i = 0; i < sequence->keys_count; i++)
 		qemu_input_event_send_key_linux(NULL, qemu_input_map_qcode_to_linux[sequence->keys[i]], true);
+	timer_mod(sequence->release_timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + sequence->duration_ms);
 	qemu_log("Startup: %s activated\n", sequence->name);
 }
 
-static void pmb887x_board_startup_keypad_ready(void *opaque, int line, int level) {
-	pmb887x_startup_sequence_t *sequence = opaque;
-
-	if (!level)
-		return;
-
-	timer_mod(sequence->release_timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + sequence->duration_ms);
-	qemu_log("Startup: %s release scheduled\n", sequence->name);
-}
-
-void pmb887x_board_startup_init(DeviceState *keypad) {
+void pmb887x_board_startup_init(void) {
 	pmb887x_board_t *board = pmb887x_board();
 	toml_datum_t startup = toml_table_get(board->config, TOML_TABLE, "startup", false);
 
@@ -101,8 +90,6 @@ void pmb887x_board_startup_init(DeviceState *keypad) {
 	startup_sequence.duration_ms = (uint32_t) duration_seconds * 1000;
 	startup_sequence.activation_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL, pmb887x_board_startup_activate, &startup_sequence);
 	startup_sequence.release_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL, pmb887x_board_startup_release, &startup_sequence);
-	qdev_connect_gpio_out_named(keypad, "KEYPAD_READY", 0,
-		qemu_allocate_irq(pmb887x_board_startup_keypad_ready, &startup_sequence, 0));
 	timer_mod(startup_sequence.activation_timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL));
-	qemu_log("Startup: %s (%d s after KEYPAD_READY)\n", scenario_name, duration_seconds);
+	qemu_log("Startup: %s (%d s)\n", scenario_name, duration_seconds);
 }

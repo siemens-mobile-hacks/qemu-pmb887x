@@ -49,7 +49,6 @@ struct pmb887x_keypad_t {
 	pmb887x_src_reg_t src[KEYPAD_IRQS];
 	keypad_input_t inputs[KEYPAD_INPUTS];
 	qemu_irq outputs[KEYPAD_OUTPUTS];
-	qemu_irq ready_out;
 	QEMUTimer *scan_timer;
 	QEMUTimer *int2_timer;
 
@@ -60,16 +59,7 @@ struct pmb887x_keypad_t {
 	bool is_scanning;
 	bool is_debounce_pending;
 	bool is_pressed;
-	bool ready;
 };
-
-static void keypad_signal_ready(pmb887x_keypad_t *p) {
-	if (p->ready)
-		return;
-
-	p->ready = true;
-	qemu_irq_pulse(p->ready_out);
-}
 
 static int64_t keypad_get_debounce_ns(pmb887x_keypad_t *p) {
 	uint32_t delay = (p->con & KEYPAD_CON_NEXT_REPEAT_DELAY) >> KEYPAD_CON_NEXT_REPEAT_DELAY_SHIFT;
@@ -169,7 +159,6 @@ static uint64_t keypad_io_read(void *opaque, hwaddr haddr, unsigned _size) {
 		case KEYPAD_PORT0:
 		case KEYPAD_PORT1:
 		case KEYPAD_PORT2:
-			keypad_signal_ready(p);
 			value = p->port[(haddr - KEYPAD_PORT0) / 4];
 			break;
 		case KEYPAD_INT0_SRC:
@@ -198,8 +187,6 @@ static void keypad_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 		case KEYPAD_INT2_SRC:
 		case KEYPAD_INT3_SRC:
 			pmb887x_src_set(&p->src[(haddr - KEYPAD_INT0_SRC) / 4], value);
-			if ((value & MOD_SRC_SRE) != 0)
-				keypad_signal_ready(p);
 			break;
 		default:
 			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
@@ -236,7 +223,6 @@ static void keypad_init(Object *obj) {
 		g_autofree char *name = g_strdup_printf("OUT%u", i);
 		qdev_init_gpio_out_named(dev, &p->outputs[i], name, 1);
 	}
-	qdev_init_gpio_out_named(dev, &p->ready_out, "KEYPAD_READY", 1);
 }
 
 static void keypad_realize(DeviceState *dev, Error **errp) {

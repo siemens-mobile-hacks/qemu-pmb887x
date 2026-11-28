@@ -269,6 +269,8 @@ config PMB887X
     select SPLIT_IRQ
     select ACCESSORY_CONNECTOR
     select ROTARY_ENCODER
+    select SIEMENS_KEYPAD_EXPANDER
+    select SLIDER_SENSOR
     select KEY_MATRIX
     select KEY_SWITCH
     select WIRED_AND
